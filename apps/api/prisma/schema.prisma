@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Phase 0/1 scope: just enough to get migrations working end-to-end and to
+// give the auth module something to attach a session to. ApiKey, Conversation,
+// Message, Recipe, and UsageRecord are added in their own migrations in
+// later phases (see architecture.md §4) rather than all at once here.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
