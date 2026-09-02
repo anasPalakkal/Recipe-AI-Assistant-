@@ -1,9 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { logger } from "./lib/logger.js";
+import { loggerOptions } from "./lib/logger.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
-    logger,
+    logger: loggerOptions,
     genReqId: () => crypto.randomUUID(),
   });
 
