@@ -10,7 +10,8 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   COOKIE_DOMAIN: z.string().min(1),
 
-  // Optional until the AI provider module lands (Phase 2+).
+  GOOGLE_CLIENT_ID: z.string().min(1),
+
   AI_GATEWAY_BASE_URL: z.string().url().optional(),
   GEMINI_API_KEY: z.string().min(1).optional(),
 });
@@ -29,7 +30,4 @@ function loadEnv(): Env {
   return parsed.data;
 }
 
-// Parsed once at boot. Every other module imports `env` from here instead of
-// touching `process.env` directly, so there is exactly one place that can be
-// wrong about configuration.
 export const env = loadEnv();
