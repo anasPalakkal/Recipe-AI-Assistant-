@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: recipeai
       POSTGRES_DB: recipeai
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -41,6 +41,7 @@ services:
       REDIS_URL: redis://redis:6379
       SESSION_SECRET: local-dev-secret-change-in-real-envs-00000000
       COOKIE_DOMAIN: localhost
+      GOOGLE_CLIENT_ID: placeholder-until-google-cloud-setup
       NODE_ENV: development
       PORT: 4000
     ports:
