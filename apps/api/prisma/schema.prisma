@@ -12,9 +12,17 @@ datasource db {
 // Message, Recipe, and UsageRecord are added in their own migrations in
 // later phases (see architecture.md §4) rather than all at once here.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String?
+  provider          String   @default("credentials")
+  // providerAccountId is null for credentials users. Postgres treats
+  // multiple NULLs in a unique constraint as non-colliding, so many
+  // credentials rows can coexist under this constraint safely — do not
+  // "fix" this by making providerAccountId non-nullable.
+  providerAccountId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
 }
