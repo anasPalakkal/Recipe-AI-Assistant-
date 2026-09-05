@@ -22,6 +22,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        run: pnpm --filter @recipeai/api exec prisma generate
+
+      - name: Build shared package
+        run: pnpm --filter @recipeai/shared build
+
       - name: Typecheck
         run: pnpm typecheck
 
