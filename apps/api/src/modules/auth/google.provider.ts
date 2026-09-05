@@ -10,20 +10,23 @@ export interface GoogleProfile {
   emailVerified: boolean;
 }
 
-export async function verifyGoogleIdToken(idToken: string): Promise<GoogleProfile> {
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: env.GOOGLE_CLIENT_ID,
-  });
-
-  const payload = ticket.getPayload();
-  if (!payload?.sub || !payload.email) {
-    throw new UnauthorizedError("Invalid Google token");
+export async function verifyGoogleIdToken(idToken: string) {
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.email || !payload.sub) {
+      throw new UnauthorizedError("Invalid Google token payload");
+    }
+    return {
+      googleId: payload.sub,
+      email: payload.email,
+      emailVerified: payload.email_verified ?? false,
+    };
+  } catch (err) {
+    if (err instanceof UnauthorizedError) throw err;
+    throw new UnauthorizedError("Invalid or expired Google token");
   }
-
-  return {
-    googleId: payload.sub,
-    email: payload.email,
-    emailVerified: payload.email_verified ?? false,
-  };
 }
