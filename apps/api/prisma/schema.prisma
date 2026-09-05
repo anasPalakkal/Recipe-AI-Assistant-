@@ -7,10 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Phase 0/1 scope: just enough to get migrations working end-to-end and to
-// give the auth module something to attach a session to. ApiKey, Conversation,
-// Message, Recipe, and UsageRecord are added in their own migrations in
-// later phases (see architecture.md §4) rather than all at once here.
+// Phase 0/1 scope: auth (User) plus the recipe domain (Recipe, Ingredient,
+// InstructionStep, AiGeneration), added in Phase 2. ApiKey, Conversation,
+// Message, and UsageRecord remain deferred to later phases (architecture.md §4).
 model User {
   id                String   @id @default(cuid())
   email             String   @unique
@@ -24,5 +23,74 @@ model User {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  recipes       Recipe[]
+  aiGenerations AiGeneration[]
+
   @@unique([provider, providerAccountId])
+}
+
+enum RecipeSource {
+  USER
+  AI
+}
+
+model Recipe {
+  id              String            @id @default(cuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  servings        Int?
+  prepTimeMinutes Int?
+  cookTimeMinutes Int?
+  source          RecipeSource      @default(USER)
+  ingredients     Ingredient[]
+  steps           InstructionStep[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Supports both "list my recipes" and cursor pagination ordered by
+  // recency, scoped to the owner in the same index.
+  @@index([userId, createdAt])
+}
+
+model Ingredient {
+  id       String  @id @default(cuid())
+  recipeId String
+  recipe   Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  name     String
+  quantity Float?
+  unit     String?
+  order    Int
+
+  @@index([recipeId, order])
+}
+
+model InstructionStep {
+  id       String @id @default(cuid())
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  content  String
+  order    Int
+
+  @@index([recipeId, order])
+}
+
+enum GenerationStatus {
+  SUCCESS
+  FAILED
+}
+
+// Audit log of every AI generation call, independent of whether the user
+// saved the result as a Recipe. Never exposed as part of the Recipe domain.
+model AiGeneration {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt      String
+  rawResponse Json
+  status      GenerationStatus
+  createdAt   DateTime         @default(now())
+
+  @@index([userId, createdAt])
 }
