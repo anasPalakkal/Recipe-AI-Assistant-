@@ -64,7 +64,10 @@ export async function loginWithGoogle(idToken: string) {
 }
 
 export async function getUserById(id: string) {
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, email: true },
+  });
   if (!user) throw new NotFoundError("User not found");
   return user;
 }
