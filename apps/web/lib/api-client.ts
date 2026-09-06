@@ -17,6 +17,16 @@ export class ApiError extends Error {
   }
 }
 
+export function extractErrorMessage(body: unknown): { message?: string; code?: string } {
+  if (body && typeof body === "object") {
+    const message =
+      "message" in body && typeof body.message === "string" ? body.message : undefined;
+    const code = "code" in body && typeof body.code === "string" ? body.code : undefined;
+    return { message, code };
+  }
+  return {};
+}
+
 export async function serverFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const cookieStore = await cookies();
   const sid = cookieStore.get("sid");
@@ -35,9 +45,10 @@ export async function serverFetch<T>(path: string, init?: RequestInit): Promise<
     let message = "Request failed";
     let code: string | undefined;
     try {
-      const body = await response.json();
-      message = body.message ?? message;
-      code = body.code;
+      const body: unknown = await response.json();
+      const parsed = extractErrorMessage(body);
+      message = parsed.message ?? message;
+      code = parsed.code;
     } catch {
       // response wasn't JSON, keep the default message
     }
