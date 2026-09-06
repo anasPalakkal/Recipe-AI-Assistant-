@@ -63,7 +63,7 @@ export default fp(async function sessionPlugin(app: FastifyInstance) {
     if (!userId) throw new UnauthorizedError("Session expired");
 
     await redis.expire(sessionKey(sessionId), SESSION_TTL_SECONDS);
-    reply.setCookie(SESSION_COOKIE_NAME, raw, cookieOptions());
+    reply.setCookie(SESSION_COOKIE_NAME, sessionId, cookieOptions());
 
     request.userId = userId;
   });
