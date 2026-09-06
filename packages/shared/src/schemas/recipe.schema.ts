@@ -31,7 +31,12 @@ export const generateRecipeSchema = z.object({
   prompt: z.string().trim().min(3).max(500),
 });
 
+export const recipeIdParamSchema = z.object({
+  id: z.string().cuid(),
+});
+
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
 export type GenerateRecipeInput = z.infer<typeof generateRecipeSchema>;
+export type RecipeIdParam = z.infer<typeof recipeIdParamSchema>;
