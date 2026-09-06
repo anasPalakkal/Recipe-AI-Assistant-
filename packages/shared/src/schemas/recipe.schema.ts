@@ -35,6 +35,39 @@ export const recipeIdParamSchema = z.object({
   id: z.string().cuid(),
 });
 
+export interface IngredientResponse {
+  id: string;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  order: number;
+}
+
+export interface InstructionStepResponse {
+  id: string;
+  content: string;
+  order: number;
+}
+
+export interface RecipeResponse {
+  id: string;
+  title: string;
+  description: string | null;
+  servings: number | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  source: "USER" | "AI";
+  createdAt: string;
+  updatedAt: string;
+  ingredients: IngredientResponse[];
+  steps: InstructionStepResponse[];
+}
+
+export interface ListRecipesResponse {
+  items: RecipeResponse[];
+  nextCursor: string | null;
+}
+
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
