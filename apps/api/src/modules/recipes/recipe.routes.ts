@@ -4,11 +4,13 @@ import {
   updateRecipeSchema,
   listRecipesQuerySchema,
   recipeIdParamSchema,
+  generateRecipeSchema,
 } from "@recipeai/shared";
 import * as recipeService from "./recipe.service.js";
 import { sessionRateLimitKey } from "../../lib/rate-limit.js";
 
 const CRUD_RATE_LIMIT = { max: 60, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey };
+const GENERATE_RATE_LIMIT = { max: 10, timeWindow: "1 hour", keyGenerator: sessionRateLimitKey };
 
 export default async function recipeRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -20,6 +22,16 @@ export default async function recipeRoutes(app: FastifyInstance) {
       const body = createRecipeSchema.parse(request.body);
       const recipe = await recipeService.createRecipe(request.userId!, body);
       return reply.status(201).send(recipe);
+    },
+  );
+
+  app.post(
+    "/generate",
+    { config: { rateLimit: GENERATE_RATE_LIMIT } },
+    async (request, reply) => {
+      const { prompt } = generateRecipeSchema.parse(request.body);
+      const draft = await recipeService.generateRecipeDraft(request.userId!, prompt);
+      return reply.send(draft);
     },
   );
 

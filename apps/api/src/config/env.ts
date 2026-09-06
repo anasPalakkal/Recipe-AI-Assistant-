@@ -12,8 +12,8 @@ const envSchema = z.object({
 
   GOOGLE_CLIENT_ID: z.string().min(1),
 
-  AI_GATEWAY_BASE_URL: z.string().url().optional(),
-  GEMINI_API_KEY: z.string().min(1).optional(),
+  AI_GATEWAY_BASE_URL: z.string().url(),
+  GEMINI_API_KEY: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

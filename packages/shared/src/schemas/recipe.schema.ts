@@ -40,3 +40,4 @@ export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
 export type GenerateRecipeInput = z.infer<typeof generateRecipeSchema>;
 export type RecipeIdParam = z.infer<typeof recipeIdParamSchema>;
+export type RecipeDraft = z.infer<typeof createRecipeSchema>;

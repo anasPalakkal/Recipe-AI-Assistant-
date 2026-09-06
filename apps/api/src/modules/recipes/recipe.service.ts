@@ -1,4 +1,5 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, GenerationStatus } from "@prisma/client";
+import { aiProvider } from "../../lib/ai/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { NotFoundError } from "../../lib/errors.js";
 import type { CreateRecipeInput, UpdateRecipeInput, ListRecipesQuery } from "@recipeai/shared";
@@ -91,4 +92,31 @@ export async function deleteRecipe(userId: string, id: string) {
   const existing = await prisma.recipe.findFirst({ where: { id, userId } });
   if (!existing) throw new NotFoundError("Recipe not found");
   await prisma.recipe.delete({ where: { id } });
+}
+
+export async function generateRecipeDraft(userId: string, prompt: string) {
+  try {
+    const { draft, raw } = await aiProvider.generateRecipe(prompt);
+
+    await prisma.aiGeneration.create({
+      data: {
+        userId,
+        prompt,
+        rawResponse: raw as Prisma.InputJsonValue,
+        status: GenerationStatus.SUCCESS,
+      },
+    });
+
+    return draft;
+  } catch (err) {
+    await prisma.aiGeneration.create({
+      data: {
+        userId,
+        prompt,
+        rawResponse: { error: err instanceof Error ? err.message : "Unknown error" },
+        status: GenerationStatus.FAILED,
+      },
+    });
+    throw err;
+  }
 }
