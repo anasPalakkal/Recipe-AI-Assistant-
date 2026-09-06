@@ -7,6 +7,7 @@ import { env } from "./config/env.js";
 import { AppError } from "./lib/errors.js";
 import sessionPlugin from "./plugins/session.plugin.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import recipeRoutes from "./modules/recipes/recipe.routes.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -19,10 +20,11 @@ export function buildApp(): FastifyInstance {
   app.register(sessionPlugin);
 
   app.register(authRoutes, { prefix: "/internal/auth" });
+  app.register(recipeRoutes, { prefix: "/internal/recipes" });
 
   app.get("/health", async () => ({ status: "ok" }));
 
-  // Other module routes (recipes, chat, nutrition, api-keys, usage) register
+  // Other module routes (chat, nutrition, api-keys, usage) register
   // here in later phases, behind session or API-key auth as appropriate.
 
   app.setErrorHandler((error, request, reply) => {
