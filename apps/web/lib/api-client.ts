@@ -1,9 +1,11 @@
 import { cookies } from "next/headers";
 
-const API_BASE_URL = process.env.API_BASE_URL;
-
-if (!API_BASE_URL) {
-  throw new Error("API_BASE_URL is not set");
+function getApiBaseUrl(): string {
+  const url = process.env.API_BASE_URL;
+  if (!url) {
+    throw new Error("API_BASE_URL is not set");
+  }
+  return url;
 }
 
 export class ApiError extends Error {
@@ -28,10 +30,11 @@ export function extractErrorMessage(body: unknown): { message?: string; code?: s
 }
 
 export async function serverFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const apiBaseUrl = getApiBaseUrl();
   const cookieStore = await cookies();
   const sid = cookieStore.get("sid");
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
