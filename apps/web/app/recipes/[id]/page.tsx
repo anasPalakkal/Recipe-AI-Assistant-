@@ -3,6 +3,8 @@ import { serverFetch, ApiError } from "@/lib/api-client";
 import type { RecipeResponse } from "@recipeai/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+export const dynamic = "force-dynamic";
+
 interface RecipePageProps {
   params: Promise<{ id: string }>;
 }

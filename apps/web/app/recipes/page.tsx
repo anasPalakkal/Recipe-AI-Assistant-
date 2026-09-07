@@ -3,6 +3,8 @@ import { serverFetch } from "@/lib/api-client";
 import type { ListRecipesResponse } from "@recipeai/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+export const dynamic = "force-dynamic";
+
 export default async function RecipesPage() {
   const { items } = await serverFetch<ListRecipesResponse>("/internal/recipes");
 
