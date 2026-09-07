@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginSchema } from "@recipeai/shared";
+import { extractErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,8 +35,9 @@ export function LoginForm() {
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setError(body?.message ?? "Login failed");
+        const body: unknown = await response.json().catch(() => null);
+        const { message } = extractErrorMessage(body);
+        setError(message ?? "Login failed");
         return;
       }
 
