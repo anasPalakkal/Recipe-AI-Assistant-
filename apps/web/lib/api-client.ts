@@ -1,4 +1,7 @@
 import { cookies } from "next/headers";
+import { ApiError, extractErrorMessage } from "./api-errors";
+
+export { ApiError };
 
 function getApiBaseUrl(): string {
   const url = process.env.API_BASE_URL;
@@ -6,27 +9,6 @@ function getApiBaseUrl(): string {
     throw new Error("API_BASE_URL is not set");
   }
   return url;
-}
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-export function extractErrorMessage(body: unknown): { message?: string; code?: string } {
-  if (body && typeof body === "object") {
-    const message =
-      "message" in body && typeof body.message === "string" ? body.message : undefined;
-    const code = "code" in body && typeof body.code === "string" ? body.code : undefined;
-    return { message, code };
-  }
-  return {};
 }
 
 export async function serverFetch<T>(path: string, init?: RequestInit): Promise<T> {
