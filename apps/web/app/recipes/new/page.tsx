@@ -15,6 +15,7 @@ type Status = "idle" | "generating" | "saving";
 export default function NewRecipePage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [streamedText, setStreamedText] = useState("");
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -27,23 +28,62 @@ export default function NewRecipePage() {
     }
 
     setError(null);
+    setDraft(null);
+    setStreamedText("");
     setStatus("generating");
+
     try {
-      const response = await fetch("/api/recipes/generate", {
+      const response = await fetch("/api/recipes/generate/stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(parsed.data),
       });
 
-      const body: unknown = await response.json().catch(() => null);
-
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
+        const body: unknown = await response.json().catch(() => null);
         const { message } = extractErrorMessage(body);
         setError(message ?? "Failed to generate recipe");
         return;
       }
 
-      setDraft(body as RecipeDraft);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulatedText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          const eventLine = rawEvent.split("\n").find((line) => line.startsWith("event:"));
+          const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
+          const eventType = eventLine?.slice(6).trim();
+          const dataStr = dataLine?.slice(5).trim();
+
+          if (dataStr) {
+            const data: unknown = JSON.parse(dataStr);
+
+            if (eventType === "chunk") {
+              accumulatedText += (data as { text: string }).text;
+              setStreamedText(accumulatedText);
+            } else if (eventType === "done") {
+              setDraft(data as RecipeDraft);
+            } else if (eventType === "error") {
+              setError((data as { message: string }).message);
+            }
+          }
+
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+    } catch {
+      setError("Connection to the server was lost");
     } finally {
       setStatus("idle");
     }
@@ -102,6 +142,12 @@ export default function NewRecipePage() {
           {status === "generating" ? "Generating..." : "Generate"}
         </Button>
       </form>
+
+      {status === "generating" && streamedText && !draft && (
+        <pre className="mb-8 whitespace-pre-wrap rounded border bg-muted p-4 font-mono text-xs">
+          {streamedText}
+        </pre>
+      )}
 
       {draft && (
         <div className="space-y-4">
