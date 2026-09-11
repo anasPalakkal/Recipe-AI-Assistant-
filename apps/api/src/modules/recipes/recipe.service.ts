@@ -1,8 +1,8 @@
 import { Prisma, GenerationStatus } from "@prisma/client";
 import { aiProvider } from "../../lib/ai/index.js";
 import { prisma } from "../../lib/prisma.js";
-import { NotFoundError } from "../../lib/errors.js";
-import type { CreateRecipeInput, UpdateRecipeInput, ListRecipesQuery } from "@recipeai/shared";
+import { NotFoundError, UpstreamServiceError } from "../../lib/errors.js";
+import { createRecipeSchema, type CreateRecipeInput, type UpdateRecipeInput, type ListRecipesQuery, type RecipeDraft } from "@recipeai/shared";
 
 const recipeInclude = {
   ingredients: { orderBy: { order: "asc" } },
@@ -118,5 +118,63 @@ export async function generateRecipeDraft(userId: string, prompt: string) {
       },
     });
     throw err;
+  }
+}
+
+export type GenerateStreamEvent =
+  | { type: "chunk"; text: string }
+  | { type: "done"; draft: RecipeDraft }
+  | { type: "error"; message: string };
+
+export async function* generateRecipeDraftStream(
+  userId: string,
+  prompt: string,
+  signal?: AbortSignal,
+): AsyncGenerator<GenerateStreamEvent> {
+  let accumulated = "";
+
+  try {
+    for await (const chunk of aiProvider.generateRecipeStream(prompt, signal)) {
+      accumulated += chunk;
+      yield { type: "chunk", text: chunk };
+    }
+
+    if (signal?.aborted) return;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(accumulated);
+    } catch {
+      throw new UpstreamServiceError("AI provider returned malformed JSON");
+    }
+
+    const result = createRecipeSchema.safeParse(parsed);
+    if (!result.success) {
+      throw new UpstreamServiceError("AI provider returned a recipe that failed validation");
+    }
+
+    await prisma.aiGeneration.create({
+      data: {
+        userId,
+        prompt,
+        rawResponse: parsed as Prisma.InputJsonValue,
+        status: GenerationStatus.SUCCESS,
+      },
+    });
+
+    yield { type: "done", draft: result.data as RecipeDraft };
+  } catch (err) {
+    if (signal?.aborted) return;
+
+    const message = err instanceof Error ? err.message : "Unknown error";
+    await prisma.aiGeneration.create({
+      data: {
+        userId,
+        prompt,
+        rawResponse: { error: message, partialText: accumulated },
+        status: GenerationStatus.FAILED,
+      },
+    });
+    yield { type: "error", message };
   }
 }

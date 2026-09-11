@@ -35,6 +35,41 @@ export default async function recipeRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post(
+    "/generate/stream",
+    { config: { rateLimit: GENERATE_RATE_LIMIT } },
+    async (request, reply) => {
+      const { prompt } = generateRecipeSchema.parse(request.body);
+      const userId = request.userId!;
+
+      const controller = new AbortController();
+      request.raw.on("close", () => controller.abort());
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      });
+
+      const send = (event: string, data: unknown) => {
+        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      for await (const evt of recipeService.generateRecipeDraftStream(userId, prompt, controller.signal)) {
+        if (evt.type === "chunk") {
+          send("chunk", { text: evt.text });
+        } else if (evt.type === "done") {
+          send("done", evt.draft);
+        } else {
+          send("error", { message: evt.message });
+        }
+      }
+
+      reply.raw.end();
+    },
+  );
+
   app.get(
     "/",
     { config: { rateLimit: CRUD_RATE_LIMIT } },

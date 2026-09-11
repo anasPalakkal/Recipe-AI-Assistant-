@@ -23,6 +23,30 @@ interface GeminiApiResponse {
     }>;
 }
 
+function buildRequestBody(prompt: string) {
+    return JSON.stringify({
+        contents: [
+            {
+                role: "user",
+                parts: [{ text: `${SYSTEM_INSTRUCTION}\n\nUser request: ${prompt}` }],
+            },
+        ],
+        generationConfig: {
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingLevel: "low" },
+        },
+    });
+}
+
+function tryParseUpstreamError(text: string): string | null {
+    try {
+        const parsed = JSON.parse(text) as { error?: { message?: string } };
+        return parsed.error?.message ?? null;
+    } catch {
+        return null;
+    }
+}
+
 export class GeminiProvider implements AiProvider {
     async generateRecipe(prompt: string): Promise<RecipeGenerationResult> {
         const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:generateContent`;
@@ -35,18 +59,7 @@ export class GeminiProvider implements AiProvider {
                     "content-type": "application/json",
                     "x-goog-api-key": env.GEMINI_API_KEY,
                 },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [{ text: `${SYSTEM_INSTRUCTION}\n\nUser request: ${prompt}` }],
-                        },
-                    ],
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                        thinkingConfig: { thinkingLevel: "low" },
-                    },
-                }),
+                body: buildRequestBody(prompt),
             });
         } catch {
             throw new UpstreamServiceError("Failed to reach AI provider");
@@ -81,5 +94,75 @@ export class GeminiProvider implements AiProvider {
         }
 
         return { draft: result.data as RecipeDraft, raw: parsed };
+    }
+
+    async *generateRecipeStream(prompt: string, signal?: AbortSignal): AsyncGenerator<string> {
+        const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:streamGenerateContent?alt=sse`;
+
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "x-goog-api-key": env.GEMINI_API_KEY,
+                },
+                body: buildRequestBody(prompt),
+                signal,
+            });
+        } catch {
+            if (signal?.aborted) return;
+            throw new UpstreamServiceError("Failed to reach AI provider");
+        }
+
+        if (!response.ok || !response.body) {
+            throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+                let boundary = buffer.indexOf("\n\n");
+                while (boundary !== -1) {
+                    const rawEvent = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+
+                    const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
+                    if (dataLine) {
+                        const jsonStr = dataLine.slice(5).trim();
+                        try {
+                            const payload: GeminiApiResponse = JSON.parse(jsonStr);
+                            const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+                            if (text) yield text;
+                        } catch {
+                            // partial/malformed SSE frame, skip rather than abort the whole stream
+                        }
+                    }
+
+                    boundary = buffer.indexOf("\n\n");
+                }
+            }
+
+            const remainder = buffer.trim();
+            if (remainder) {
+                const upstreamError = tryParseUpstreamError(remainder);
+                if (upstreamError) {
+                    throw new UpstreamServiceError(`AI provider error: ${upstreamError}`);
+                }
+            }
+        } catch (err) {
+            if (signal?.aborted) return;
+            if (err instanceof UpstreamServiceError) throw err;
+            throw new UpstreamServiceError("AI provider stream failed mid-response");
+        } finally {
+            reader.releaseLock();
+        }
     }
 }

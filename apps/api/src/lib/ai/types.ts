@@ -7,4 +7,5 @@ export interface RecipeGenerationResult {
 
 export interface AiProvider {
   generateRecipe(prompt: string): Promise<RecipeGenerationResult>;
+  generateRecipeStream(prompt: string, signal?: AbortSignal): AsyncGenerator<string>;
 }
