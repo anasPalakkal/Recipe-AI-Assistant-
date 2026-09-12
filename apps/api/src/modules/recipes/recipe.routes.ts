@@ -8,6 +8,7 @@ import {
 } from "@recipeai/shared";
 import * as recipeService from "./recipe.service.js";
 import { sessionRateLimitKey } from "../../lib/rate-limit.js";
+import { requireVerifiedEmail } from "../auth/require-verified-email.js";
 
 const CRUD_RATE_LIMIT = { max: 60, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey };
 const GENERATE_RATE_LIMIT = { max: 10, timeWindow: "1 hour", keyGenerator: sessionRateLimitKey };
@@ -17,7 +18,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
 
   app.post(
     "/",
-    { config: { rateLimit: CRUD_RATE_LIMIT } },
+    { preHandler: requireVerifiedEmail, config: { rateLimit: CRUD_RATE_LIMIT } },
     async (request, reply) => {
       const body = createRecipeSchema.parse(request.body);
       const recipe = await recipeService.createRecipe(request.userId!, body);
@@ -27,7 +28,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
 
   app.post(
     "/generate",
-    { config: { rateLimit: GENERATE_RATE_LIMIT } },
+    { preHandler: requireVerifiedEmail, config: { rateLimit: GENERATE_RATE_LIMIT } },
     async (request, reply) => {
       const { prompt } = generateRecipeSchema.parse(request.body);
       const draft = await recipeService.generateRecipeDraft(request.userId!, prompt);
@@ -37,7 +38,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
 
   app.post(
     "/generate/stream",
-    { config: { rateLimit: GENERATE_RATE_LIMIT } },
+    { preHandler: requireVerifiedEmail, config: { rateLimit: GENERATE_RATE_LIMIT } },
     async (request, reply) => {
       const { prompt } = generateRecipeSchema.parse(request.body);
       const userId = request.userId!;
@@ -92,7 +93,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
 
   app.patch(
     "/:id",
-    { config: { rateLimit: CRUD_RATE_LIMIT } },
+    { preHandler: requireVerifiedEmail, config: { rateLimit: CRUD_RATE_LIMIT } },
     async (request, reply) => {
       const { id } = recipeIdParamSchema.parse(request.params);
       const body = updateRecipeSchema.parse(request.body);
@@ -103,7 +104,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
 
   app.delete(
     "/:id",
-    { config: { rateLimit: CRUD_RATE_LIMIT } },
+    { preHandler: requireVerifiedEmail, config: { rateLimit: CRUD_RATE_LIMIT } },
     async (request, reply) => {
       const { id } = recipeIdParamSchema.parse(request.params);
       await recipeService.deleteRecipe(request.userId!, id);
