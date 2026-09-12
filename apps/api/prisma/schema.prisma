@@ -20,6 +20,10 @@ model User {
   // credentials rows can coexist under this constraint safely — do not
   // "fix" this by making providerAccountId non-nullable.
   providerAccountId String?
+  // Null until the user completes OTP verification (credentials signup)
+  // or signs in via Google (set at creation). Derive "isVerified" from
+  // this field everywhere — do not add a parallel boolean.
+  emailVerifiedAt   DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

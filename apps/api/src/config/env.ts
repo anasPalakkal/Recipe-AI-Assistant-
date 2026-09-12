@@ -14,6 +14,12 @@ const envSchema = z.object({
 
   AI_GATEWAY_BASE_URL: z.string().url(),
   GEMINI_API_KEY: z.string().min(1),
+
+  RESEND_API_KEY: z.string().min(1),
+  RESEND_FROM_EMAIL: z.string().email(),
+  // Base URL of the web app, used to build the password-reset link sent
+  // by email (e.g. https://recipeai.app or http://localhost:3000).
+  APP_BASE_URL: z.string().url(),
 });
 
 export type Env = z.infer<typeof envSchema>;
