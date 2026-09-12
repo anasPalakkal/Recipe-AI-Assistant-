@@ -4,7 +4,7 @@ import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { loggerOptions } from "./lib/logger.js";
 import { env } from "./config/env.js";
-import { AppError } from "./lib/errors.js";
+import { AppError, TooManyRequestsError } from "./lib/errors.js";
 import sessionPlugin from "./plugins/session.plugin.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import recipeRoutes from "./modules/recipes/recipe.routes.js";
@@ -29,8 +29,16 @@ export function buildApp(): FastifyInstance {
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
+      if (error instanceof TooManyRequestsError && error.retryAfterSeconds !== undefined) {
+        reply.header("Retry-After", String(error.retryAfterSeconds));
+      }
+
       return reply.status(error.statusCode).send({
-        error: { code: error.code, message: error.message },
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.details !== undefined ? { details: error.details } : {}),
+        },
       });
     }
 
