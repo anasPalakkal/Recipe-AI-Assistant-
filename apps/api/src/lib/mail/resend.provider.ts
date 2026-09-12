@@ -18,6 +18,10 @@ export class ResendEmailProvider implements EmailProvider {
     await this.send(to, "RecipeAI password reset requested", googleAccountEmailHtml());
   }
 
+  async sendPasswordChangedEmail(to: string): Promise<void> {
+    await this.send(to, "Your RecipeAI password was changed", passwordChangedEmailHtml());
+  }
+
   private async send(to: string, subject: string, html: string): Promise<void> {
     const { error } = await resend.emails.send({
       from: env.RESEND_FROM_EMAIL,
@@ -59,6 +63,16 @@ function googleAccountEmailHtml(): string {
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2>Password reset requested</h2>
       <p>This account signs in with Google and doesn't have a password. Use "Sign in with Google" instead.</p>
+    </div>
+  `;
+}
+
+function passwordChangedEmailHtml(): string {
+  return `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>Your password was changed</h2>
+      <p>This is a confirmation that your RecipeAI password was just changed. All other active sessions have been logged out.</p>
+      <p>If you didn't do this, your account may be compromised — reset your password again immediately.</p>
     </div>
   `;
 }

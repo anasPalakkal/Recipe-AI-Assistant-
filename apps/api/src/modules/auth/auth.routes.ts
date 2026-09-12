@@ -1,6 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { signupSchema, loginSchema, googleSignInSchema, verifyEmailSchema } from "@recipeai/shared";
+import {
+  signupSchema,
+  loginSchema,
+  googleSignInSchema,
+  verifyEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from "@recipeai/shared";
 import * as authService from "./auth.service.js";
+import * as passwordResetService from "./password-reset.service.js";
 import { createSession, destroySession } from "../../plugins/session.plugin.js";
 import { toPublicUser } from "../../lib/user.js";
 import { sessionRateLimitKey } from "../../lib/rate-limit.js";
@@ -70,6 +78,28 @@ export default async function authRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       await authService.resendVerificationCode(request.userId!);
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    "/forgot-password",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { email } = forgotPasswordSchema.parse(request.body);
+      await passwordResetService.requestPasswordReset(email);
+      return reply.send({
+        message: "If an account exists with this email, a password reset link has been sent.",
+      });
+    },
+  );
+
+  app.post(
+    "/reset-password",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { token, newPassword } = resetPasswordSchema.parse(request.body);
+      await passwordResetService.resetPassword(token, newPassword);
       return reply.status(204).send();
     },
   );
