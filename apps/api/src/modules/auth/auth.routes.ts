@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { signupSchema, loginSchema, googleSignInSchema } from "@recipeai/shared";
+import { signupSchema, loginSchema, googleSignInSchema, verifyEmailSchema } from "@recipeai/shared";
 import * as authService from "./auth.service.js";
 import { createSession, destroySession } from "../../plugins/session.plugin.js";
 import { toPublicUser } from "../../lib/user.js";
+import { sessionRateLimitKey } from "../../lib/rate-limit.js";
 
 export default async function authRoutes(app: FastifyInstance) {
   app.post(
@@ -47,4 +48,29 @@ export default async function authRoutes(app: FastifyInstance) {
     const user = await authService.getUserById(request.userId!);
     return reply.send(toPublicUser(user));
   });
+
+  app.post(
+    "/verify-email",
+    {
+      preHandler: app.authenticate,
+      config: { rateLimit: { max: 10, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey } },
+    },
+    async (request, reply) => {
+      const { code } = verifyEmailSchema.parse(request.body);
+      const user = await authService.verifyEmail(request.userId!, code);
+      return reply.send(toPublicUser(user));
+    },
+  );
+
+  app.post(
+    "/resend-verification",
+    {
+      preHandler: app.authenticate,
+      config: { rateLimit: { max: 5, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey } },
+    },
+    async (request, reply) => {
+      await authService.resendVerificationCode(request.userId!);
+      return reply.status(204).send();
+    },
+  );
 }
