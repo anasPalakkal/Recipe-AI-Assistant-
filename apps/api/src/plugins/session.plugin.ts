@@ -21,6 +21,13 @@ function sessionKey(sessionId: string): string {
   return `session:${sessionId}`;
 }
 
+// Reverse index: lets us find and revoke every active session for a user
+// (e.g. on password reset) without scanning all Redis keys. Not a TTL'd
+// key — cleaned lazily whenever revokeAllSessions runs.
+function userSessionsKey(userId: string): string {
+  return `user-sessions:${userId}`;
+}
+
 function cookieOptions() {
   return {
     httpOnly: true,
@@ -36,6 +43,7 @@ function cookieOptions() {
 export async function createSession(reply: FastifyReply, userId: string): Promise<void> {
   const sessionId = randomUUID();
   await redis.set(sessionKey(sessionId), userId, "EX", SESSION_TTL_SECONDS);
+  await redis.sadd(userSessionsKey(userId), sessionId);
   reply.setCookie(SESSION_COOKIE_NAME, sessionId, cookieOptions());
 }
 
@@ -44,10 +52,26 @@ export async function destroySession(request: FastifyRequest, reply: FastifyRepl
   if (raw) {
     const unsigned = request.unsignCookie(raw);
     if (unsigned.valid && unsigned.value) {
-      await redis.del(sessionKey(unsigned.value));
+      const sessionId = unsigned.value;
+      const userId = await redis.get(sessionKey(sessionId));
+      await redis.del(sessionKey(sessionId));
+      if (userId) {
+        await redis.srem(userSessionsKey(userId), sessionId);
+      }
     }
   }
   reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
+}
+
+// Used by password reset: invalidates every active session for a user,
+// e.g. to log out a possible attacker who had a live session before the
+// legitimate owner regained control of the account.
+export async function revokeAllSessions(userId: string): Promise<void> {
+  const sessionIds = await redis.smembers(userSessionsKey(userId));
+  if (sessionIds.length > 0) {
+    await redis.del(...sessionIds.map(sessionKey));
+  }
+  await redis.del(userSessionsKey(userId));
 }
 
 export default fp(async function sessionPlugin(app: FastifyInstance) {
