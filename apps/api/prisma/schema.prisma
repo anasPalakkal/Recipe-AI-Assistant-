@@ -8,8 +8,9 @@ datasource db {
 }
 
 // Phase 0/1 scope: auth (User) plus the recipe domain (Recipe, Ingredient,
-// InstructionStep, AiGeneration), added in Phase 2. ApiKey, Conversation,
-// Message, and UsageRecord remain deferred to later phases (architecture.md §4).
+// InstructionStep, AiGeneration), added in Phase 2. Phase 6 adds ApiKey and
+// UsageRecord for the public API. Conversation and Message remain deferred
+// (architecture.md §4).
 model User {
   id                String   @id @default(cuid())
   email             String   @unique
@@ -29,6 +30,7 @@ model User {
 
   recipes       Recipe[]
   aiGenerations AiGeneration[]
+  apiKeys       ApiKey[]
 
   @@unique([provider, providerAccountId])
 }
@@ -97,4 +99,48 @@ model AiGeneration {
   createdAt   DateTime         @default(now())
 
   @@index([userId, createdAt])
+}
+
+// A user may hold multiple concurrent active keys (default cap enforced at
+// the service layer, not here) to support rotation without downtime: issue
+// a new key, roll it out, revoke the old one — never a window with zero
+// valid key. rateLimitPerMinute and monthlyQuota are per-key data, not
+// global constants, so limits can be tuned per customer without a deploy.
+model ApiKey {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  // First ~10 chars of the raw key (e.g. "rk_live_ab"), shown in the
+  // dashboard so a user can tell keys apart. Not secret on its own.
+  keyPrefix          String
+  // SHA-256 hash of the full raw key. The raw key itself is never stored
+  // and is shown to the user exactly once, at creation.
+  keyHash            String    @unique
+  rateLimitPerMinute Int       @default(20)
+  monthlyQuota       Int       @default(300)
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  usageRecords UsageRecord[]
+
+  // Active-key lookups and "list my keys" both filter/sort by owner.
+  @@index([userId])
+}
+
+// One row per public /v1 request, independent of whether the underlying
+// generation succeeded — mirrors AiGeneration's role for internal traffic.
+// Never exposed outside usage/analytics endpoints.
+model UsageRecord {
+  id         String   @id @default(cuid())
+  apiKeyId   String
+  apiKey     ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  endpoint   String
+  statusCode Int
+  createdAt  DateTime @default(now())
+
+  // Supports both "usage for this key" and time-bucketed usage queries
+  // (e.g. this month's request count for a dashboard chart) in one index.
+  @@index([apiKeyId, createdAt])
 }
