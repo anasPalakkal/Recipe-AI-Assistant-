@@ -1,4 +1,5 @@
 import { Prisma, GenerationStatus } from "@prisma/client";
+import type { ConsumerType } from "../../lib/ai/types.js";
 import { aiProvider } from "../../lib/ai/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { NotFoundError, UpstreamServiceError } from "../../lib/errors.js";
@@ -94,9 +95,9 @@ export async function deleteRecipe(userId: string, id: string) {
   await prisma.recipe.delete({ where: { id } });
 }
 
-export async function generateRecipeDraft(userId: string, prompt: string) {
+export async function generateRecipeDraft(userId: string, prompt: string, consumerType: ConsumerType) {
   try {
-    const { draft, raw } = await aiProvider.generateRecipe(prompt);
+    const { draft, raw } = await aiProvider.generateRecipe(prompt, consumerType);
 
     await prisma.aiGeneration.create({
       data: {
@@ -129,13 +130,13 @@ export type GenerateStreamEvent =
 export async function* generateRecipeDraftStream(
   userId: string,
   prompt: string,
+  consumerType: ConsumerType,
   signal?: AbortSignal,
 ): AsyncGenerator<GenerateStreamEvent> {
   let accumulated = "";
 
   try {
-    for await (const chunk of aiProvider.generateRecipeStream(prompt, signal)) {
-      accumulated += chunk;
+    for await (const chunk of aiProvider.generateRecipeStream(prompt, consumerType, signal)) {
       yield { type: "chunk", text: chunk };
     }
 

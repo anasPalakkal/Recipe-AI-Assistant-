@@ -31,7 +31,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
     { preHandler: requireVerifiedEmail, config: { rateLimit: GENERATE_RATE_LIMIT } },
     async (request, reply) => {
       const { prompt } = generateRecipeSchema.parse(request.body);
-      const draft = await recipeService.generateRecipeDraft(request.userId!, prompt);
+      const draft = await recipeService.generateRecipeDraft(request.userId!, prompt, "internal");
       return reply.send(draft);
     },
   );
@@ -57,7 +57,7 @@ export default async function recipeRoutes(app: FastifyInstance) {
         reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       };
 
-      for await (const evt of recipeService.generateRecipeDraftStream(userId, prompt, controller.signal)) {
+      for await (const evt of recipeService.generateRecipeDraftStream(userId, prompt, "internal", controller.signal)) {
         if (evt.type === "chunk") {
           send("chunk", { text: evt.text });
         } else if (evt.type === "done") {
