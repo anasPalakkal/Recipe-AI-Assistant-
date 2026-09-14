@@ -137,9 +137,9 @@ export async function* generateRecipeDraftStream(
 
   try {
     for await (const chunk of aiProvider.generateRecipeStream(prompt, consumerType, signal)) {
+      accumulated += chunk;
       yield { type: "chunk", text: chunk };
     }
-
     if (signal?.aborted) return;
 
     let parsed: unknown;
