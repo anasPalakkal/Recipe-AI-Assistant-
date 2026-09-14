@@ -6,7 +6,12 @@ import { apiKeyAuth } from "../../lib/api-key-auth.js";
 import { checkAndIncrementThrottle, type ThrottleCheckResult } from "../../lib/throttle.js";
 import { checkAndIncrementQuota, type QuotaCheckResult } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
-import { AppError, TooManyRequestsError, formatAppErrorBody } from "../../lib/errors.js";
+import {
+  AppError,
+  TooManyRequestsError,
+  UpstreamServiceError,
+  formatAppErrorBody,
+} from "../../lib/errors.js";
 
 const ENDPOINT = "POST /v1/recipes/generate";
 const DEFAULT_RATE_LIMIT_PER_MINUTE = 20;
@@ -28,6 +33,9 @@ function readIdempotencyKey(header: string | string[] | undefined): string | und
   return Array.isArray(header) ? header[0] : header;
 }
 
+// Headers are set on every response path — success or rejection — so a
+// client can see its remaining budget even when a request is denied,
+// without needing a separate "check my limits" endpoint.
 function setThrottleHeaders(reply: FastifyReply, throttle: ThrottleCheckResult): void {
   reply.header("X-RateLimit-Limit", String(throttle.limit));
   reply.header("X-RateLimit-Remaining", String(Math.max(throttle.limit - throttle.count, 0)));
@@ -48,6 +56,9 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     const userId = request.userId!;
     const idempotencyKey = readIdempotencyKey(request.headers["idempotency-key"]);
 
+    // Checked before validation or any other work: a genuine retry with
+    // the same key should replay the exact prior outcome without redoing
+    // anything, including body validation.
     if (idempotencyKey) {
       const cached = await getCachedResponse(apiKeyId, idempotencyKey, request.log);
       if (cached) {
@@ -71,6 +82,10 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
 
+    // Quota is checked (and incremented) before generation begins, so a
+    // disconnected or aborted request never gets a free uncounted call.
+    // This does mean requests that fail after this point still count —
+    // see architecture.md §6 for the policy and reasoning.
     const quota = await checkAndIncrementQuota(
       apiKeyId,
       request.apiKeyMonthlyQuota ?? DEFAULT_MONTHLY_QUOTA,
@@ -79,7 +94,13 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     setQuotaHeaders(reply, quota);
 
     if (!quota.allowed) {
-      const err = new TooManyRequestsError("Monthly quota exceeded.", "QUOTA_EXCEEDED");
+      // A Redis outage during the quota check fails closed (see quota.ts)
+      // to avoid uncapped spend on the real upstream Gemini key. That
+      // case is a different failure than a legitimate over-quota
+      // rejection and must not be reported to the caller as one.
+      const err = quota.redisUnavailable
+        ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
+        : new TooManyRequestsError("Monthly quota exceeded.", "QUOTA_EXCEEDED");
       await logUsage(apiKeyId, err.statusCode, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
@@ -101,6 +122,10 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
         return reply.status(err.statusCode).send(body);
       }
 
+      // Unexpected, non-AppError failure: log for usage purposes, but
+      // rethrow so the global error handler produces the standard 500 —
+      // and deliberately don't cache it, since an unclassified failure
+      // isn't safe to treat as a deterministic, replayable outcome.
       await logUsage(apiKeyId, 500, request.log);
       throw err;
     }
