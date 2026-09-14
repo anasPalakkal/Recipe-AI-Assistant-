@@ -9,6 +9,7 @@ import sessionPlugin from "./plugins/session.plugin.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
+import { redis } from "./lib/redis.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -23,6 +24,7 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes, { prefix: "/internal/auth" });
   app.register(recipeRoutes, { prefix: "/internal/recipes" });
   app.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
+  app.register(rateLimit, { global: false, redis, skipOnError: true });
 
   app.get("/health", async () => ({ status: "ok" }));
 

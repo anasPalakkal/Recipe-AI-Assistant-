@@ -6,6 +6,8 @@ import { UnauthorizedError } from "./errors.js";
 declare module "fastify" {
   interface FastifyRequest {
     apiKeyId?: string;
+    apiKeyRateLimitPerMinute?: number;
+    apiKeyMonthlyQuota?: number;
   }
 }
 
@@ -13,8 +15,9 @@ const BEARER_PREFIX = "Bearer ";
 
 // Same contract as `authenticate`: sets request.userId, so any service
 // function written against session auth works unchanged under API-key
-// auth. Also sets request.apiKeyId, needed downstream for rate limiting,
-// quota checks, and usage logging keyed by key rather than by user.
+// auth. Also exposes apiKeyId, and each key's own configured limits, so
+// downstream rate limiting and quota checks can be per-key rather than
+// global constants.
 export async function apiKeyAuth(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const header = request.headers.authorization;
   if (!header?.startsWith(BEARER_PREFIX)) {
@@ -38,6 +41,8 @@ export async function apiKeyAuth(request: FastifyRequest, _reply: FastifyReply):
 
   request.userId = apiKey.userId;
   request.apiKeyId = apiKey.id;
+  request.apiKeyRateLimitPerMinute = apiKey.rateLimitPerMinute;
+  request.apiKeyMonthlyQuota = apiKey.monthlyQuota;
 
   // Fire-and-forget: last-used tracking must never block or fail the
   // request it's recording.
