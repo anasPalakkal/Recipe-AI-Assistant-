@@ -5,6 +5,8 @@ export interface QuotaCheckResult {
   allowed: boolean;
   used: number;
   limit: number;
+  // Unix seconds when the current billing period ends (start of next UTC month).
+  resetAt: number;
 }
 
 function currentUtcPeriod(): string {
@@ -16,36 +18,31 @@ function quotaKey(apiKeyId: string): string {
   return `quota:${apiKeyId}:${currentUtcPeriod()}`;
 }
 
-function secondsUntilNextUtcMonth(): number {
+function nextUtcMonthStart(): Date {
   const now = new Date();
-  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
-  return Math.ceil((nextMonth.getTime() - now.getTime()) / 1000);
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
 }
 
-// Atomic INCR-first quota check, same class as the OTP counters: the
-// increment always happens (this call always counts as an attempt,
-// including calls that later fail upstream — see quota policy notes in
-// architecture.md §6), and the limit is only ever checked against the
-// value INCR itself returned. There is no read-then-write window.
-//
-// Fails open on Redis errors: an unreachable Redis must not take down the
-// entire public API. Logged at error level so a sustained outage is
-// visible, not silent.
+function secondsUntilNextUtcMonth(): number {
+  return Math.ceil((nextUtcMonthStart().getTime() - Date.now()) / 1000);
+}
+
 export async function checkAndIncrementQuota(
   apiKeyId: string,
   monthlyQuota: number,
   logger: FastifyBaseLogger,
 ): Promise<QuotaCheckResult> {
   const key = quotaKey(apiKeyId);
+  const resetAt = Math.floor(nextUtcMonthStart().getTime() / 1000);
 
   try {
     const used = await redis.incr(key);
     if (used === 1) {
       await redis.expire(key, secondsUntilNextUtcMonth());
     }
-    return { allowed: used <= monthlyQuota, used, limit: monthlyQuota };
+    return { allowed: used <= monthlyQuota, used, limit: monthlyQuota, resetAt };
   } catch (err) {
     logger.error({ err, apiKeyId }, "quota check failed, failing open");
-    return { allowed: true, used: 0, limit: monthlyQuota };
+    return { allowed: true, used: 0, limit: monthlyQuota, resetAt };
   }
 }

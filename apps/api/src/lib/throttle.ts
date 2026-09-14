@@ -5,6 +5,8 @@ export interface ThrottleCheckResult {
   allowed: boolean;
   count: number;
   limit: number;
+  // Unix seconds when the current window ends and the count resets.
+  resetAt: number;
 }
 
 const WINDOW_SECONDS = 60;
@@ -14,8 +16,11 @@ const WINDOW_SECONDS = 60;
 // bucket and again at the head of the next. Acceptable for an abuse
 // throttle at this scale; a sliding window would need a sorted-set
 // implementation for a marginal accuracy gain.
-function throttleKey(apiKeyId: string): string {
-  const bucket = Math.floor(Date.now() / 1000 / WINDOW_SECONDS);
+function currentBucket(): number {
+  return Math.floor(Date.now() / 1000 / WINDOW_SECONDS);
+}
+
+function throttleKey(apiKeyId: string, bucket: number): string {
   return `throttle:${apiKeyId}:${bucket}`;
 }
 
@@ -24,16 +29,18 @@ export async function checkAndIncrementThrottle(
   limit: number,
   logger: FastifyBaseLogger,
 ): Promise<ThrottleCheckResult> {
-  const key = throttleKey(apiKeyId);
+  const bucket = currentBucket();
+  const key = throttleKey(apiKeyId, bucket);
+  const resetAt = (bucket + 1) * WINDOW_SECONDS;
 
   try {
     const count = await redis.incr(key);
     if (count === 1) {
       await redis.expire(key, WINDOW_SECONDS);
     }
-    return { allowed: count <= limit, count, limit };
+    return { allowed: count <= limit, count, limit, resetAt };
   } catch (err) {
     logger.error({ err, apiKeyId }, "throttle check failed, failing open");
-    return { allowed: true, count: 0, limit };
+    return { allowed: true, count: 0, limit, resetAt };
   }
 }

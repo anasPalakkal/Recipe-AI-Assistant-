@@ -1,10 +1,10 @@
-import type { FastifyInstance, FastifyBaseLogger } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyBaseLogger } from "fastify";
 import { generateRecipeSchema } from "@recipeai/shared";
 import * as recipeService from "../recipes/recipe.service.js";
 import { prisma } from "../../lib/prisma.js";
 import { apiKeyAuth } from "../../lib/api-key-auth.js";
-import { checkAndIncrementThrottle } from "../../lib/throttle.js";
-import { checkAndIncrementQuota } from "../../lib/quota.js";
+import { checkAndIncrementThrottle, type ThrottleCheckResult } from "../../lib/throttle.js";
+import { checkAndIncrementQuota, type QuotaCheckResult } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
 import { AppError, TooManyRequestsError, formatAppErrorBody } from "../../lib/errors.js";
 
@@ -28,6 +28,18 @@ function readIdempotencyKey(header: string | string[] | undefined): string | und
   return Array.isArray(header) ? header[0] : header;
 }
 
+function setThrottleHeaders(reply: FastifyReply, throttle: ThrottleCheckResult): void {
+  reply.header("X-RateLimit-Limit", String(throttle.limit));
+  reply.header("X-RateLimit-Remaining", String(Math.max(throttle.limit - throttle.count, 0)));
+  reply.header("X-RateLimit-Reset", String(throttle.resetAt));
+}
+
+function setQuotaHeaders(reply: FastifyReply, quota: QuotaCheckResult): void {
+  reply.header("X-Quota-Limit", String(quota.limit));
+  reply.header("X-Quota-Remaining", String(Math.max(quota.limit - quota.used, 0)));
+  reply.header("X-Quota-Reset", String(quota.resetAt));
+}
+
 export default async function publicRecipeRoutes(app: FastifyInstance) {
   app.addHook("preHandler", apiKeyAuth);
 
@@ -36,9 +48,6 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     const userId = request.userId!;
     const idempotencyKey = readIdempotencyKey(request.headers["idempotency-key"]);
 
-    // Checked before validation or any other work: a genuine retry with
-    // the same key should replay the exact prior outcome without redoing
-    // anything, including body validation.
     if (idempotencyKey) {
       const cached = await getCachedResponse(apiKeyId, idempotencyKey, request.log);
       if (cached) {
@@ -53,6 +62,8 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       request.apiKeyRateLimitPerMinute ?? DEFAULT_RATE_LIMIT_PER_MINUTE,
       request.log,
     );
+    setThrottleHeaders(reply, throttle);
+
     if (!throttle.allowed) {
       const err = new TooManyRequestsError("Rate limit exceeded. Try again shortly.", "RATE_LIMITED", 60);
       reply.header("Retry-After", "60");
@@ -60,15 +71,13 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
 
-    // Quota is checked (and incremented) before generation begins, so a
-    // disconnected or aborted request never gets a free uncounted call.
-    // This does mean requests that fail after this point still count —
-    // see architecture.md §6 for the policy and reasoning.
     const quota = await checkAndIncrementQuota(
       apiKeyId,
       request.apiKeyMonthlyQuota ?? DEFAULT_MONTHLY_QUOTA,
       request.log,
     );
+    setQuotaHeaders(reply, quota);
+
     if (!quota.allowed) {
       const err = new TooManyRequestsError("Monthly quota exceeded.", "QUOTA_EXCEEDED");
       await logUsage(apiKeyId, err.statusCode, request.log);
@@ -92,10 +101,6 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
         return reply.status(err.statusCode).send(body);
       }
 
-      // Unexpected, non-AppError failure: log for usage purposes, but
-      // rethrow so the global error handler produces the standard 500 —
-      // and deliberately don't cache it, since an unclassified failure
-      // isn't safe to treat as a deterministic, replayable outcome.
       await logUsage(apiKeyId, 500, request.log);
       throw err;
     }
