@@ -4,11 +4,12 @@ import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { loggerOptions } from "./lib/logger.js";
 import { env } from "./config/env.js";
-import { AppError, TooManyRequestsError } from "./lib/errors.js";
+import { AppError, TooManyRequestsError, formatAppErrorBody } from "./lib/errors.js";
 import sessionPlugin from "./plugins/session.plugin.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
+import publicRecipeRoutes from "./modules/public-api/recipe.routes.js";
 import { redis } from "./lib/redis.js";
 
 export function buildApp(): FastifyInstance {
@@ -18,32 +19,22 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(cookie, { secret: env.SESSION_SECRET });
-  app.register(rateLimit, { global: false });
+  app.register(rateLimit, { global: false, redis, skipOnError: true });
   app.register(sessionPlugin);
 
   app.register(authRoutes, { prefix: "/internal/auth" });
   app.register(recipeRoutes, { prefix: "/internal/recipes" });
   app.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
-  app.register(rateLimit, { global: false, redis, skipOnError: true });
+  app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });
 
   app.get("/health", async () => ({ status: "ok" }));
-
-  // Other module routes (chat, nutrition, api-keys, usage) register
-  // here in later phases, behind session or API-key auth as appropriate.
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
       if (error instanceof TooManyRequestsError && error.retryAfterSeconds !== undefined) {
         reply.header("Retry-After", String(error.retryAfterSeconds));
       }
-
-      return reply.status(error.statusCode).send({
-        error: {
-          code: error.code,
-          message: error.message,
-          ...(error.details !== undefined ? { details: error.details } : {}),
-        },
-      });
+      return reply.status(error.statusCode).send(formatAppErrorBody(error));
     }
 
     if (error instanceof ZodError) {
