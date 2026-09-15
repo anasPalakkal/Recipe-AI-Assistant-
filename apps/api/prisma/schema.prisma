@@ -154,15 +154,15 @@ model Conversation {
   id        String    @id @default(cuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // Nullable — no auto-titling in v1. Add a "title from first prompt"
-  // convenience later if the history list needs better labels than dates.
   title     String?
+  pinned    Boolean   @default(false)
   messages  Message[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  // Chat history list: most recently active conversations first, scoped to owner.
-  @@index([userId, updatedAt])
+  // Chat history list: pinned conversations first, then most recently
+  // active, scoped to owner — single index covers the full sort.
+  @@index([userId, pinned, updatedAt])
 }
 
 enum MessageRole {
