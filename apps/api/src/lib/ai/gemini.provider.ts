@@ -1,17 +1,11 @@
 import { createRecipeSchema, type RecipeDraft } from "@recipeai/shared";
 import { UpstreamServiceError } from "../errors.js";
 import { env } from "../../config/env.js";
-import type { AiProvider, ConsumerType, RecipeGenerationResult } from "./types.js";
+import type { AiProvider, ChatTurn, ConsumerType, RecipeGenerationResult } from "./types.js";
 
 const MODEL = "gemini-3.6-flash";
 
-// Non-streaming requests should resolve well within this window; if Gemini
-// hasn't responded by then, something's wrong upstream and we fail fast
-// rather than let the caller hang indefinitely.
 const REQUEST_TIMEOUT_MS = 30_000;
-// Streaming covers the full generation, not just the first byte, so it gets
-// a longer ceiling. This is a total-duration cap, not an idle timeout — a
-// slow-but-steady stream is fine; a stalled one is not.
 const STREAM_TIMEOUT_MS = 60_000;
 
 const MAX_RETRIES = 2;
@@ -19,6 +13,12 @@ const RETRY_BASE_DELAY_MS = 300;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 const MAX_OUTPUT_TOKENS = 4096;
+
+// Chat history is capped to bound both Gemini context size and per-message
+// cost. Applied as "last N turns" by the caller before this is invoked -
+// this constant lives here because it's a property of the request shape,
+// not a business rule the service layer should own.
+export const MAX_CHAT_HISTORY_TURNS = 20;
 
 const SYSTEM_INSTRUCTION = `You are a recipe generation assistant. Given a user's request, produce a single recipe as a JSON object with this exact shape:
 {
@@ -30,7 +30,8 @@ const SYSTEM_INSTRUCTION = `You are a recipe generation assistant. Given a user'
   "ingredients": [{ "name": string, "quantity": number | null, "unit": string | null }],
   "steps": [{ "content": string }]
 }
-Return only the JSON object, with no markdown formatting or commentary.`;
+Return only the JSON object, with no markdown formatting or commentary.
+When the conversation includes a previous recipe, treat the newest user message as a request to modify that recipe, and return the full updated recipe in the same shape - not a diff or partial update.`;
 
 interface GeminiApiResponse {
     candidates?: Array<{
@@ -42,6 +43,14 @@ function resolveApiKey(consumerType: ConsumerType): string {
     return consumerType === "public" ? env.GEMINI_API_KEY_PUBLIC : env.GEMINI_API_KEY;
 }
 
+function generationConfig() {
+    return {
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: "low" },
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+    };
+}
+
 function buildRequestBody(prompt: string) {
     return JSON.stringify({
         contents: [
@@ -50,12 +59,23 @@ function buildRequestBody(prompt: string) {
                 parts: [{ text: `${SYSTEM_INSTRUCTION}\n\nUser request: ${prompt}` }],
             },
         ],
-        generationConfig: {
-            responseMimeType: "application/json",
-            thinkingConfig: { thinkingLevel: "low" },
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-        },
+        generationConfig: generationConfig(),
     });
+}
+
+// System instruction is prepended only to the first turn - repeating it on
+// every turn wastes tokens and Gemini retains it across the conversation.
+function buildChatRequestBody(history: ChatTurn[]) {
+    const contents = history.map((turn, index) => ({
+        role: turn.role,
+        parts: [
+            {
+                text: index === 0 ? `${SYSTEM_INSTRUCTION}\n\nUser request: ${turn.content}` : turn.content,
+            },
+        ],
+    }));
+
+    return JSON.stringify({ contents, generationConfig: generationConfig() });
 }
 
 function tryParseUpstreamError(text: string): string | null {
@@ -71,10 +91,6 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Combines an optional caller-provided AbortSignal (e.g. client disconnect)
-// with an internal timeout, while letting call sites tell the two apart —
-// a timeout should produce a clear error, a caller-initiated abort should
-// fail silently (the caller already knows and doesn't need to be told).
 function createTimeoutController(timeoutMs: number, externalSignal?: AbortSignal) {
     const controller = new AbortController();
     let timedOut = false;
@@ -100,10 +116,6 @@ function createTimeoutController(timeoutMs: number, externalSignal?: AbortSignal
     };
 }
 
-// Retries transient upstream failures (network errors, 429/5xx) before any
-// response body has been read. Never retries after streaming has started,
-// and never retries an aborted request — an abort is intentional, retrying
-// it would ignore the caller's cancellation.
 async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
     let lastError: unknown;
 
@@ -132,58 +144,74 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
     throw new UpstreamServiceError("Failed to reach AI provider after retries");
 }
 
+// Shared by generateRecipe and generateRecipeInContext - both are
+// non-streaming, single-response calls that only differ in request body.
+async function requestRecipe(body: string, consumerType: ConsumerType): Promise<RecipeGenerationResult> {
+    const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:generateContent`;
+    const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+        response = await fetchWithRetry(url, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-goog-api-key": resolveApiKey(consumerType),
+            },
+            body,
+            signal: timeout.signal,
+        });
+    } catch {
+        if (timeout.didTimeout()) throw new UpstreamServiceError("AI provider request timed out");
+        throw new UpstreamServiceError("Failed to reach AI provider");
+    } finally {
+        timeout.cleanup();
+    }
+
+    if (!response.ok) {
+        throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+    }
+
+    let payload: unknown;
+    try {
+        payload = await response.json();
+    } catch {
+        throw new UpstreamServiceError("AI provider returned an invalid response envelope");
+    }
+
+    const text = (payload as GeminiApiResponse)?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+        throw new UpstreamServiceError("AI provider returned no content");
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        throw new UpstreamServiceError("AI provider returned malformed JSON");
+    }
+
+    const result = createRecipeSchema.safeParse(parsed);
+    if (!result.success) {
+        throw new UpstreamServiceError("AI provider returned a recipe that failed validation");
+    }
+
+    return { draft: result.data as RecipeDraft, raw: parsed };
+}
+
 export class GeminiProvider implements AiProvider {
     async generateRecipe(prompt: string, consumerType: ConsumerType): Promise<RecipeGenerationResult> {
-        const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:generateContent`;
-        const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
+        return requestRecipe(buildRequestBody(prompt), consumerType);
+    }
 
-        let response: Response;
-        try {
-            response = await fetchWithRetry(url, {
-                method: "POST",
-                headers: {
-                    "content-type": "application/json",
-                    "x-goog-api-key": resolveApiKey(consumerType),
-                },
-                body: buildRequestBody(prompt),
-                signal: timeout.signal,
-            });
-        } catch {
-            if (timeout.didTimeout()) throw new UpstreamServiceError("AI provider request timed out");
-            throw new UpstreamServiceError("Failed to reach AI provider");
-        } finally {
-            timeout.cleanup();
+    async generateRecipeInContext(
+        history: ChatTurn[],
+        consumerType: ConsumerType,
+    ): Promise<RecipeGenerationResult> {
+        if (history.length === 0) {
+            throw new UpstreamServiceError("Cannot generate from empty chat history");
         }
-
-        if (!response.ok) {
-            throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
-        }
-
-        let payload: unknown;
-        try {
-            payload = await response.json();
-        } catch {
-            throw new UpstreamServiceError("AI provider returned an invalid response envelope");
-        }
-
-        const text = (payload as GeminiApiResponse)?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) {
-            throw new UpstreamServiceError("AI provider returned no content");
-        }
-
-        let parsed: unknown;
-        try {
-            parsed = JSON.parse(text);
-        } catch {
-            throw new UpstreamServiceError("AI provider returned malformed JSON");
-        }
-
-        const result = createRecipeSchema.safeParse(parsed);
-        if (!result.success) {
-            throw new UpstreamServiceError("AI provider returned a recipe that failed validation");
-        }
-
-        return { draft: result.data as RecipeDraft, raw: parsed };
+        return requestRecipe(buildChatRequestBody(history), consumerType);
     }
 
     async *generateRecipeStream(
