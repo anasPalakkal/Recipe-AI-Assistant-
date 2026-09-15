@@ -5,7 +5,7 @@ import type { ChatTurn } from "../../lib/ai/types.js";
 import { prisma } from "../../lib/prisma.js";
 import { NotFoundError, ConflictError } from "../../lib/errors.js";
 import * as recipeService from "../recipes/recipe.service.js";
-import type { RecipeDraft } from "@recipeai/shared";
+import type { RecipeDraft, UpdateConversationInput } from "@recipeai/shared";
 
 async function getOwnedConversation(userId: string, conversationId: string) {
   const conversation = await prisma.conversation.findFirst({
@@ -63,9 +63,31 @@ export async function createConversation(userId: string) {
 export async function listConversations(userId: string) {
   return prisma.conversation.findMany({
     where: { userId },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true, createdAt: true, updatedAt: true },
+    orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+    select: { id: true, title: true, pinned: true, createdAt: true, updatedAt: true },
   });
+}
+
+export async function updateConversation(
+  userId: string,
+  conversationId: string,
+  input: UpdateConversationInput,
+) {
+  await getOwnedConversation(userId, conversationId);
+
+  return prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      ...(input.title !== undefined && { title: input.title }),
+      ...(input.pinned !== undefined && { pinned: input.pinned }),
+    },
+  });
+}
+
+export async function deleteConversation(userId: string, conversationId: string) {
+  await getOwnedConversation(userId, conversationId);
+  // Messages cascade via the FK — no manual cleanup needed.
+  await prisma.conversation.delete({ where: { id: conversationId } });
 }
 
 export async function getConversationWithMessages(userId: string, conversationId: string) {
