@@ -32,6 +32,8 @@ model User {
   aiGenerations AiGeneration[]
   apiKeys       ApiKey[]
 
+  conversations Conversation[]
+
   @@unique([provider, providerAccountId])
 }
 
@@ -54,6 +56,9 @@ model Recipe {
   steps           InstructionStep[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+
+  chatMessages Message[]
+
 
   // Supports both "list my recipes" and cursor pagination ordered by
   // recency, scoped to the owner in the same index.
@@ -143,4 +148,44 @@ model UsageRecord {
   // Supports both "usage for this key" and time-bucketed usage queries
   // (e.g. this month's request count for a dashboard chart) in one index.
   @@index([apiKeyId, createdAt])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Nullable — no auto-titling in v1. Add a "title from first prompt"
+  // convenience later if the history list needs better labels than dates.
+  title     String?
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Chat history list: most recently active conversations first, scoped to owner.
+  @@index([userId, updatedAt])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  // User turns: the prompt text. Assistant turns: optional commentary only —
+  // the actual recipe lives in recipeDraft, never duplicated into content.
+  content        String?
+  // Assistant turns only. Same validated shape as RecipeDraft, stored as
+  // JSON since it's read-only display data here, not a queryable relation.
+  recipeDraft    Json?
+  // Set once the user clicks save on this turn. Lets the UI show "saved"
+  // state and makes the save action idempotent (second click is a no-op).
+  savedRecipeId  String?
+  savedRecipe    Recipe?      @relation(fields: [savedRecipeId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }
