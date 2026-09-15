@@ -17,6 +17,7 @@ export const messageIdParamSchema = z.object({
 export interface ConversationSummary {
   id: string;
   title: string | null;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,16 @@ export interface SendMessageResponse {
   assistantMessage: MessageResponse;
 }
 
+export const updateConversationSchema = z
+  .object({
+    title: z.string().trim().min(1).max(100).nullable().optional(),
+    pinned: z.boolean().optional(),
+  })
+  .refine((data) => data.title !== undefined || data.pinned !== undefined, {
+    message: "At least one field (title or pinned) must be provided",
+  });
+
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type ConversationIdParam = z.infer<typeof conversationIdParamSchema>;
 export type MessageIdParam = z.infer<typeof messageIdParamSchema>;
+export type UpdateConversationInput = z.infer<typeof updateConversationSchema>;
