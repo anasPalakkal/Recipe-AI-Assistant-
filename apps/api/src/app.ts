@@ -11,6 +11,7 @@ import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
 import publicRecipeRoutes from "./modules/public-api/recipe.routes.js";
 import { redis } from "./lib/redis.js";
+import chatRoutes from "./modules/chat/chat.routes.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -25,6 +26,7 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes, { prefix: "/internal/auth" });
   app.register(recipeRoutes, { prefix: "/internal/recipes" });
   app.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
+  app.register(chatRoutes, { prefix: "/internal/chat" });
   app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });
 
   app.get("/health", async () => ({ status: "ok" }));
