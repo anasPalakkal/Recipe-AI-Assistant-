@@ -170,22 +170,34 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum MessageResponseType {
+  RECIPE
+  FOOD_INFO
+  REFUSED
+}
+
 model Message {
   id             String       @id @default(cuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           MessageRole
-  // User turns: the prompt text. Assistant turns: optional commentary only —
-  // the actual recipe lives in recipeDraft, never duplicated into content.
-  content        String?
+// User turns: the prompt text. Assistant turns: populated for FOOD_INFO
+// (the answer text) and REFUSED (the refusal message) responses; null for
+// RECIPE responses, which store their data in recipeDraft instead.
+content        String?
   // Assistant turns only. Same validated shape as RecipeDraft, stored as
   // JSON since it's read-only display data here, not a queryable relation.
   recipeDraft    Json?
-  // Set once the user clicks save on this turn. Lets the UI show "saved"
-  // state and makes the save action idempotent (second click is a no-op).
-  savedRecipeId  String?
+ // Set once the user successfully saves this turn as a Recipe. A second
+ // save attempt is rejected (ConflictError, 409) rather than treated as a
+ // no-op — this signals the "already saved" state explicitly rather than
+ // silently swallowing it.
+savedRecipeId  String?
   savedRecipe    Recipe?      @relation(fields: [savedRecipeId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
+
+  responseType MessageResponseType? // set only on ASSISTANT messages; null for USER
+
 
   @@index([conversationId, createdAt])
 }
