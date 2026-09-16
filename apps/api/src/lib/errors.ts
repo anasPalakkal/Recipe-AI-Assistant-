@@ -71,3 +71,9 @@ export function formatAppErrorBody(error: AppError) {
     },
   };
 }
+
+export class UnprocessableEntityError extends AppError {
+  constructor(message = "Unprocessable entity", code = "UNPROCESSABLE_ENTITY", details?: unknown) {
+    super(message, 422, code, details);
+  }
+}
