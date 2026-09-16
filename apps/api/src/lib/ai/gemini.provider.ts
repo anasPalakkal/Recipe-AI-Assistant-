@@ -1,4 +1,5 @@
-import { aiResponseSchema } from "@recipeai/shared";import { UpstreamServiceError } from "../errors.js";
+import { aiResponseSchema } from "@recipeai/shared";
+import { UpstreamServiceError } from "../errors.js";
 import { env } from "../../config/env.js";
 import type { AiProvider, ChatTurn, ConsumerType, AiGenerationResult } from "./types.js";
 
@@ -8,6 +9,11 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const STREAM_TIMEOUT_MS = 60_000;
 
 const MAX_RETRIES = 2;
+// Separate, smaller budget from MAX_RETRIES: a timeout already spends a
+// full timeout window, so retrying it repeatedly multiplies worst-case
+// latency fast. One retry accepts up to ~2x latency in exchange for
+// surviving an occasional slow-but-healthy response.
+const TIMEOUT_RETRY_LIMIT = 1;
 const RETRY_BASE_DELAY_MS = 300;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
@@ -166,6 +172,11 @@ function createTimeoutController(timeoutMs: number, externalSignal?: AbortSignal
     };
 }
 
+// Used by streaming only. A single timeout/signal spans both connecting
+// AND reading the stream body afterward, so it must stay alive and linked
+// to the external signal for the full stream lifecycle - it cannot be
+// replaced per attempt without breaking that link. Streaming therefore
+// does not retry on timeout (see fetchNonStreamingWithRetry for that).
 async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
     let lastError: unknown;
 
@@ -194,29 +205,74 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
     throw new UpstreamServiceError("Failed to reach AI provider after retries");
 }
 
+// Used by non-streaming calls only (generateRecipe, generateRecipeInContext).
+// Unlike fetchWithRetry, there's no external signal to preserve across
+// attempts here, so each attempt gets its own fresh, fully independent
+// timeout window - a timed-out attempt is retried once (TIMEOUT_RETRY_LIMIT),
+// since a slow-but-otherwise-healthy response is a plausible transient
+// condition, not grounds to fail immediately.
+async function fetchNonStreamingWithRetry(
+    url: string,
+    buildRequestInit: (signal: AbortSignal) => RequestInit,
+): Promise<Response> {
+    let statusRetriesUsed = 0;
+    let timeoutRetriesUsed = 0;
+
+    for (;;) {
+        const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
+        let response: Response | undefined;
+        let timedOut = false;
+
+        try {
+            response = await fetch(url, buildRequestInit(timeout.signal));
+        } catch {
+            timedOut = timeout.didTimeout();
+        } finally {
+            timeout.cleanup();
+        }
+
+        if (response) {
+            if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
+                return response;
+            }
+            if (statusRetriesUsed >= MAX_RETRIES) {
+                throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+            }
+            await sleep(RETRY_BASE_DELAY_MS * 2 ** statusRetriesUsed);
+            statusRetriesUsed++;
+            continue;
+        }
+
+        if (timedOut) {
+            if (timeoutRetriesUsed >= TIMEOUT_RETRY_LIMIT) {
+                throw new UpstreamServiceError("AI provider request timed out");
+            }
+            timeoutRetriesUsed++;
+            continue; // fresh full timeout window next loop - no backoff, the wait already happened
+        }
+
+        if (statusRetriesUsed >= MAX_RETRIES) {
+            throw new UpstreamServiceError("Failed to reach AI provider after retries");
+        }
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** statusRetriesUsed);
+        statusRetriesUsed++;
+    }
+}
+
 // Shared by generateRecipe and generateRecipeInContext - both are
 // non-streaming, single-response calls that only differ in request body.
 async function requestAiResponse(body: string, consumerType: ConsumerType): Promise<AiGenerationResult> {
     const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:generateContent`;
-    const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
 
-    let response: Response;
-    try {
-        response = await fetchWithRetry(url, {
-            method: "POST",
-            headers: {
-                "content-type": "application/json",
-                "x-goog-api-key": resolveApiKey(consumerType),
-            },
-            body,
-            signal: timeout.signal,
-        });
-    } catch {
-        if (timeout.didTimeout()) throw new UpstreamServiceError("AI provider request timed out");
-        throw new UpstreamServiceError("Failed to reach AI provider");
-    } finally {
-        timeout.cleanup();
-    }
+    const response = await fetchNonStreamingWithRetry(url, (signal) => ({
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": resolveApiKey(consumerType),
+        },
+        body,
+        signal,
+    }));
 
     if (!response.ok) {
         throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
