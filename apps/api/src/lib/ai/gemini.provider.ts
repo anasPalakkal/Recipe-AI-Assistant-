@@ -1,5 +1,4 @@
-import { aiResponseSchema, type AiResponse } from "@recipeai/shared";
-import { UpstreamServiceError } from "../errors.js";
+import { aiResponseSchema } from "@recipeai/shared";import { UpstreamServiceError } from "../errors.js";
 import { env } from "../../config/env.js";
 import type { AiProvider, ChatTurn, ConsumerType, AiGenerationResult } from "./types.js";
 
