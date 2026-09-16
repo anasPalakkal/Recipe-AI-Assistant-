@@ -63,6 +63,20 @@ Generates a recipe draft from a natural-language prompt.
     { "content": "Bring a large pot of salted water to a boil." }
   ]
 }
+
+### Scope
+
+This endpoint only generates recipes. A prompt unrelated to food, cooking,
+or nutrition is rejected with `422 OUT_OF_SCOPE`. A prompt that asks a
+food-related question rather than requesting a recipe (e.g. "how much
+protein is in 100g of chicken") is rejected with `422
+FOOD_INFO_NOT_RECIPE` — the answer is still included in `details.answer`
+in case you want to surface it to your users rather than treat it as a
+dead end.
+
+**A rejected prompt for scope reasons (`422`) still counts against your
+monthly quota**, consistent with the rule above: the request reached
+this endpoint and was attempted.
 ```
 
 This endpoint returns the generated draft only. It does not save anything to your recipe collection — that requires a separate authenticated save step (not part of this API version).
@@ -136,6 +150,9 @@ All errors follow this shape:
 | 429 | `QUOTA_EXCEEDED` | Monthly quota used up; resets next calendar month (UTC) |
 | 502 | `UPSTREAM_SERVICE_ERROR` | The generation provider failed or timed out after internal retries |
 | 500 | `INTERNAL_ERROR` | Unexpected server error |
+| 422 | `OUT_OF_SCOPE` | Prompt isn't related to recipes, cooking, or nutrition |
+| 422 | `FOOD_INFO_NOT_RECIPE` | Prompt was a food/nutrition question rather than a recipe request — see `details.answer` |
+| 422 | `UNSAFE_OR_UNCLEAR` | Prompt attempted to bypass or redefine the assistant's scope |
 
 ## Notes
 

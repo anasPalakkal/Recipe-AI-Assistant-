@@ -240,6 +240,54 @@ can terminate a stream mid-generation with a non-`data:`-prefixed JSON
 error block in the trailing buffer — handled explicitly rather than
 assumed to always be a clean SSE frame.
 
+### Response scoping: schema-enforced, not prompt-only
+
+Originally, `responseMimeType: "application/json"` was set with no
+matching `responseSchema` — the output shape was constrained by
+`SYSTEM_INSTRUCTION` text alone. This is a soft constraint: every output
+slot was a recipe field, so the model had no valid way to express "this
+isn't a recipe request" and would launder off-topic prompts (e.g. "write
+JavaScript hello world") into a plausible-looking fake recipe rather than
+refuse. Prompt text alone cannot reliably override the structural
+pressure of a forced output shape.
+
+Fixed by giving the model a real output slot for every outcome, via a
+Gemini `responseSchema` matching a Zod discriminated union
+(`AiResponse` in `packages/shared`):
+- `type: "recipe"` — a generated or modified recipe.
+- `type: "food_info"` — a factual food/cooking/nutrition answer that
+  isn't a recipe request.
+- `type: "refused"` — out of scope, or an attempt to redefine the
+  assistant's role (prompt injection).
+
+**Scope boundary for `food_info`:** factual questions (nutrition facts,
+substitutions, technique) are answered; questions requiring medical or
+dietary-health judgment are refused, not answered — this is a liability
+determination, not a factual lookup, and is deliberately conservative.
+This boundary currently lives only in the Gemini system prompt string —
+recorded here so a future prompt edit doesn't silently redefine it
+without the trade-off being visible.
+
+**Chat treats `food_info` and `refused` as normal, successful turns**
+(persisted, `AiGeneration` logged `SUCCESS`) — the model did its job
+correctly by declining or answering informationally; this is not a
+failure path. **Single-shot generation** (`generateRecipeDraft`,
+`generateRecipeDraftStream`, and `/v1/recipes/generate`) has no chat UI
+to render a text answer or refusal into, so the same outcomes surface as
+`422` with a distinct `error.code` per case
+(`OUT_OF_SCOPE`/`FOOD_INFO_NOT_RECIPE`/`UNSAFE_OR_UNCLEAR`) instead.
+
+Also fixed: the system instruction was previously spliced into
+`contents[0]`'s text (chat's first turn) rather than sent as a true
+system-level instruction. Since chat history is truncated to the most
+recent `MAX_CHAT_HISTORY_TURNS`, a conversation exceeding that length
+would truncate away the actual first turn while a stale `index === 0`
+check kept assuming the instruction was still present — silently
+dropping scope enforcement entirely on long conversations. Fixed by
+using Gemini's native `systemInstruction` request field, sent on every
+call independent of `contents`, removing the "first turn" special case
+altogether rather than patching around it.
+
 ---
 
 ## 5. Public API (Phase 6)
