@@ -1,11 +1,18 @@
-import { Prisma, MessageRole, GenerationStatus } from "@prisma/client";
+import { Prisma, MessageRole, MessageResponseType, GenerationStatus } from "@prisma/client";
 import { aiProvider } from "../../lib/ai/index.js";
 import { MAX_CHAT_HISTORY_TURNS } from "../../lib/ai/gemini.provider.js";
 import type { ChatTurn } from "../../lib/ai/types.js";
 import { prisma } from "../../lib/prisma.js";
-import { NotFoundError, ConflictError } from "../../lib/errors.js";
+import { NotFoundError, ConflictError, UnprocessableEntityError } from "../../lib/errors.js";
 import * as recipeService from "../recipes/recipe.service.js";
-import type { RecipeDraft, UpdateConversationInput } from "@recipeai/shared";
+import type { AiResponse, UpdateConversationInput } from "@recipeai/shared";
+
+const REFUSAL_MESSAGES: Record<"out_of_scope" | "unsafe_or_unclear", string> = {
+  out_of_scope:
+    "I can only help with recipes, cooking, and nutrition questions. Try asking me for a recipe or a food-related question.",
+  unsafe_or_unclear:
+    "I can't help with that request. Feel free to ask me for a recipe or a food-related question instead.",
+};
 
 async function getOwnedConversation(userId: string, conversationId: string) {
   const conversation = await prisma.conversation.findFirst({
@@ -15,25 +22,68 @@ async function getOwnedConversation(userId: string, conversationId: string) {
   return conversation;
 }
 
-function toChatTurns(
-  messages: Array<{ role: MessageRole; content: string | null; recipeDraft: unknown }>,
-): ChatTurn[] {
-  const recent = messages.slice(-MAX_CHAT_HISTORY_TURNS);
-  return recent.map((message) => ({
-    role: message.role === MessageRole.USER ? "user" : "model",
-    content:
-      message.role === MessageRole.USER
-        ? (message.content ?? "")
-        : JSON.stringify(message.recipeDraft),
-  }));
+interface StoredMessage {
+  role: MessageRole;
+  content: string | null;
+  recipeDraft: unknown;
+  responseType: MessageResponseType | null;
 }
 
-// Wraps a generateRecipeInContext call with the same audit-logging contract
-// generateRecipeDraft already follows: every attempt gets an AiGeneration
-// row, SUCCESS or FAILED, before the caller sees the result or the error.
-async function generateAndLog(userId: string, promptLabel: string, history: ChatTurn[]) {
+// Reconstructs each assistant turn's content using whichever field actually
+// holds its data, based on responseType - recipeDraft for RECIPE turns,
+// content (already the assistant's plain-text answer/refusal) otherwise.
+function toChatTurns(messages: StoredMessage[]): ChatTurn[] {
+  const recent = messages.slice(-MAX_CHAT_HISTORY_TURNS);
+  return recent.map((message) => {
+    if (message.role === MessageRole.USER) {
+      return { role: "user" as const, content: message.content ?? "" };
+    }
+    const content =
+      message.responseType === MessageResponseType.RECIPE
+        ? JSON.stringify(message.recipeDraft)
+        : (message.content ?? "");
+    return { role: "model" as const, content };
+  });
+}
+
+// Maps a validated AiResponse onto the Prisma fields for an assistant
+// Message row. Each response type owns exactly one of content/recipeDraft -
+// the other is left null, so a row's shape always matches its responseType.
+function toAssistantMessageData(response: AiResponse) {
+  switch (response.type) {
+    case "recipe":
+      return {
+        responseType: MessageResponseType.RECIPE,
+        content: null,
+        recipeDraft: response.recipe as unknown as Prisma.InputJsonValue,
+      };
+    case "food_info":
+      return {
+        responseType: MessageResponseType.FOOD_INFO,
+        content: response.answer,
+        recipeDraft: Prisma.JsonNull,
+      };
+    case "refused":
+      return {
+        responseType: MessageResponseType.REFUSED,
+        content: REFUSAL_MESSAGES[response.reason],
+        recipeDraft: Prisma.JsonNull,
+      };
+  }
+}
+
+// Wraps a generation call with the same audit-logging contract used
+// elsewhere: every attempt gets an AiGeneration row, SUCCESS or FAILED,
+// before the caller sees the result or the error. Chat treats "refused"
+// and "food_info" as successful generations, not failures - the model
+// did its job correctly by declining or answering informationally.
+async function generateAndLog(
+  userId: string,
+  promptLabel: string,
+  history: ChatTurn[],
+): Promise<AiResponse> {
   try {
-    const { draft, raw } = await aiProvider.generateRecipeInContext(history, "internal");
+    const { response, raw } = await aiProvider.generateRecipeInContext(history, "internal");
     await prisma.aiGeneration.create({
       data: {
         userId,
@@ -42,7 +92,7 @@ async function generateAndLog(userId: string, promptLabel: string, history: Chat
         status: GenerationStatus.SUCCESS,
       },
     });
-    return draft;
+    return response;
   } catch (err) {
     await prisma.aiGeneration.create({
       data: {
@@ -112,18 +162,14 @@ export async function sendMessage(userId: string, conversationId: string, prompt
 
   const history = [...toChatTurns(priorMessages), { role: "user" as const, content: prompt }];
 
-  // If generation fails, the user's message stays persisted (visible in
-  // history) but no assistant reply follows - same failure UX as any chat
-  // app: your message sent, the response errored, retry is available.
-  const draft = await generateAndLog(userId, prompt, history);
+  // If generation fails outright (upstream error), the user's message stays
+  // persisted but no assistant reply follows - retry is available. A
+  // refusal or food-info answer is NOT a failure - it's a valid reply.
+  const response = await generateAndLog(userId, prompt, history);
 
   const [assistantMessage] = await prisma.$transaction([
     prisma.message.create({
-      data: {
-        conversationId,
-        role: MessageRole.ASSISTANT,
-        recipeDraft: draft as unknown as Prisma.InputJsonValue,
-      },
+      data: { conversationId, role: MessageRole.ASSISTANT, ...toAssistantMessageData(response) },
     }),
     prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }),
   ]);
@@ -145,13 +191,13 @@ export async function regenerateMessage(userId: string, conversationId: string, 
   });
 
   const history = toChatTurns(priorMessages);
-  const draft = await generateAndLog(userId, "regenerate", history);
+  const response = await generateAndLog(userId, "regenerate", history);
 
   return prisma.message.update({
     where: { id: messageId },
     data: {
-      recipeDraft: draft as unknown as Prisma.InputJsonValue,
-      savedRecipeId: null,
+      ...toAssistantMessageData(response),
+      savedRecipeId: null, // a save from before regeneration is stale regardless of new type
     },
   });
 }
@@ -163,9 +209,12 @@ export async function saveMessageAsRecipe(userId: string, conversationId: string
     where: { id: messageId, conversationId, role: MessageRole.ASSISTANT },
   });
   if (!message) throw new NotFoundError("Message not found");
+  if (message.responseType !== MessageResponseType.RECIPE) {
+    throw new UnprocessableEntityError("Only recipe responses can be saved", "NOT_A_RECIPE");
+  }
   if (message.savedRecipeId) throw new ConflictError("This recipe has already been saved");
 
-  const draft = message.recipeDraft as unknown as RecipeDraft;
+  const draft = message.recipeDraft as unknown as Parameters<typeof recipeService.createRecipe>[1];
   const recipe = await recipeService.createRecipe(userId, draft);
 
   await prisma.message.update({
