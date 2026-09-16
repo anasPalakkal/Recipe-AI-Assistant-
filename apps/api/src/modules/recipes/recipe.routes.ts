@@ -62,6 +62,8 @@ export default async function recipeRoutes(app: FastifyInstance) {
           send("chunk", { text: evt.text });
         } else if (evt.type === "done") {
           send("done", evt.draft);
+        } else if (evt.type === "refused") {
+          send("refused", { message: evt.message, reasonCode: evt.reasonCode });
         } else {
           send("error", { message: evt.message });
         }
