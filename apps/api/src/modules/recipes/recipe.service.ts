@@ -2,9 +2,16 @@ import { Prisma, GenerationStatus } from "@prisma/client";
 import type { ConsumerType } from "../../lib/ai/types.js";
 import { aiProvider } from "../../lib/ai/index.js";
 import { prisma } from "../../lib/prisma.js";
-import { NotFoundError, UpstreamServiceError } from "../../lib/errors.js";
-import { createRecipeSchema, type CreateRecipeInput, type UpdateRecipeInput, type ListRecipesQuery, type RecipeDraft } from "@recipeai/shared";
-
+import { NotFoundError, UpstreamServiceError, UnprocessableEntityError } from "../../lib/errors.js";
+import {
+  // createRecipeSchema,
+  aiResponseSchema,
+  type AiResponse,
+  type CreateRecipeInput,
+  type UpdateRecipeInput,
+  type ListRecipesQuery,
+  type RecipeDraft,
+} from "@recipeai/shared";
 const recipeInclude = {
   ingredients: { orderBy: { order: "asc" } },
   steps: { orderBy: { order: "asc" } },
@@ -95,20 +102,33 @@ export async function deleteRecipe(userId: string, id: string) {
   await prisma.recipe.delete({ where: { id } });
 }
 
+// Maps a non-recipe AiResponse to the error this endpoint returns. Reaching
+// the provider and getting a valid, schema-conforming response is still a
+// successful generation (logged as SUCCESS below) even when it's a refusal
+// or a food-info answer - this is a caller-contract mismatch (this endpoint
+// promises a recipe), not an upstream failure, so it's never logged FAILED.
+function toRecipeOnlyError(response: Extract<AiResponse, { type: "food_info" | "refused" }>) {
+  if (response.type === "food_info") {
+    return new UnprocessableEntityError(
+      "This looks like a food question rather than a recipe request.",
+      "FOOD_INFO_NOT_RECIPE",
+      { answer: response.answer },
+    );
+  }
+  return new UnprocessableEntityError(
+    response.reason === "out_of_scope"
+      ? "This request isn't related to recipes or cooking."
+      : "This request couldn't be processed.",
+    response.reason === "out_of_scope" ? "OUT_OF_SCOPE" : "UNSAFE_OR_UNCLEAR",
+  );
+}
+
 export async function generateRecipeDraft(userId: string, prompt: string, consumerType: ConsumerType) {
+  let response: AiResponse;
+  let raw: unknown;
+
   try {
-    const { draft, raw } = await aiProvider.generateRecipe(prompt, consumerType);
-
-    await prisma.aiGeneration.create({
-      data: {
-        userId,
-        prompt,
-        rawResponse: raw as Prisma.InputJsonValue,
-        status: GenerationStatus.SUCCESS,
-      },
-    });
-
-    return draft;
+    ({ response, raw } = await aiProvider.generateRecipe(prompt, consumerType));
   } catch (err) {
     await prisma.aiGeneration.create({
       data: {
@@ -120,11 +140,27 @@ export async function generateRecipeDraft(userId: string, prompt: string, consum
     });
     throw err;
   }
+
+  await prisma.aiGeneration.create({
+    data: {
+      userId,
+      prompt,
+      rawResponse: raw as Prisma.InputJsonValue,
+      status: GenerationStatus.SUCCESS,
+    },
+  });
+
+  if (response.type !== "recipe") {
+    throw toRecipeOnlyError(response);
+  }
+
+  return response.recipe;
 }
 
 export type GenerateStreamEvent =
   | { type: "chunk"; text: string }
   | { type: "done"; draft: RecipeDraft }
+  | { type: "refused"; message: string; reasonCode: "OUT_OF_SCOPE" | "FOOD_INFO_NOT_RECIPE" | "UNSAFE_OR_UNCLEAR" }
   | { type: "error"; message: string };
 
 export async function* generateRecipeDraftStream(
@@ -149,9 +185,9 @@ export async function* generateRecipeDraftStream(
       throw new UpstreamServiceError("AI provider returned malformed JSON");
     }
 
-    const result = createRecipeSchema.safeParse(parsed);
+    const result = aiResponseSchema.safeParse(parsed);
     if (!result.success) {
-      throw new UpstreamServiceError("AI provider returned a recipe that failed validation");
+      throw new UpstreamServiceError("AI provider returned a response that failed validation");
     }
 
     await prisma.aiGeneration.create({
@@ -163,7 +199,25 @@ export async function* generateRecipeDraftStream(
       },
     });
 
-    yield { type: "done", draft: result.data as RecipeDraft };
+    const response = result.data;
+    if (response.type !== "recipe") {
+      const reasonCode =
+        response.type === "food_info"
+          ? "FOOD_INFO_NOT_RECIPE"
+          : response.reason === "out_of_scope"
+            ? "OUT_OF_SCOPE"
+            : "UNSAFE_OR_UNCLEAR";
+      const message =
+        response.type === "food_info"
+          ? response.answer
+          : reasonCode === "OUT_OF_SCOPE"
+            ? "This request isn't related to recipes or cooking."
+            : "This request couldn't be processed.";
+      yield { type: "refused", message, reasonCode };
+      return;
+    }
+
+    yield { type: "done", draft: response.recipe as RecipeDraft };
   } catch (err) {
     if (signal?.aborted) return;
 
