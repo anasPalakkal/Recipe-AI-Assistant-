@@ -41,8 +41,10 @@ Choose "recipe" when the user wants a dish generated, or an existing recipe in t
   "prepTimeMinutes": number | null,
   "cookTimeMinutes": number | null,
   "ingredients": [{ "name": string, "quantity": number | null, "unit": string | null }],
-  "steps": [{ "content": string }]
+  "steps": [{ "content": string }],
+  "imageSearchQuery": string
 }
+"imageSearchQuery" must be a short, generic, literal description of the finished dish suitable for a stock photo search (e.g. "garlic butter pasta", "grilled beef tacos") - never the recipe's stylized title, never include brand names, adjectives like "grandma's" or "amazing", or marketing language.
 When the conversation includes a previous recipe, treat the newest user message as a request to modify it, and return the full updated recipe in the same shape - not a diff.
 
 Choose "food_info" when the user asks a factual question about food, cooking, ingredients, or nutrition (e.g. "how much protein is in 100g of rice", "what can I substitute for buttermilk", "why does searing meat before braising matter"). Answer directly and concisely in "answer". Do not answer medical or dietary-health questions (e.g. whether a diet is safe for a medical condition) - treat those as "refused" with reason "unsafe_or_unclear".
@@ -91,8 +93,9 @@ const RECIPE_DRAFT_JSON_SCHEMA = {
                 required: ["content"],
             },
         },
+        imageSearchQuery: { type: "STRING" },
     },
-    required: ["title", "ingredients", "steps"],
+    required: ["title", "ingredients", "steps", "imageSearchQuery"],
 } as const;
 
 // Gemini's schema support has no conditional-required-by-discriminant, so
@@ -218,7 +221,7 @@ async function fetchNonStreamingWithRetry(
     let statusRetriesUsed = 0;
     let timeoutRetriesUsed = 0;
 
-    for (;;) {
+    for (; ;) {
         const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
         let response: Response | undefined;
         let timedOut = false;
