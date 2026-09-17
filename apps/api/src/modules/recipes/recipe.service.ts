@@ -1,10 +1,10 @@
 import { Prisma, GenerationStatus } from "@prisma/client";
 import type { ConsumerType } from "../../lib/ai/types.js";
 import { aiProvider } from "../../lib/ai/index.js";
+import { resolveRecipeImage, type PhotoResult } from "../../lib/images/index.js";
 import { prisma } from "../../lib/prisma.js";
 import { NotFoundError, UpstreamServiceError, UnprocessableEntityError } from "../../lib/errors.js";
 import {
-  // createRecipeSchema,
   aiResponseSchema,
   type AiResponse,
   type CreateRecipeInput,
@@ -12,6 +12,7 @@ import {
   type ListRecipesQuery,
   type RecipeDraft,
 } from "@recipeai/shared";
+
 const recipeInclude = {
   ingredients: { orderBy: { order: "asc" } },
   steps: { orderBy: { order: "asc" } },
@@ -26,6 +27,11 @@ export async function createRecipe(userId: string, input: CreateRecipeInput) {
       servings: input.servings ?? null,
       prepTimeMinutes: input.prepTimeMinutes ?? null,
       cookTimeMinutes: input.cookTimeMinutes ?? null,
+      imageUrl: input.imageUrl ?? null,
+      imageThumbnailUrl: input.imageThumbnailUrl ?? null,
+      imageSource: input.imageSource ?? "NONE",
+      imageAttributionName: input.imageAttributionName ?? null,
+      imageAttributionUrl: input.imageAttributionUrl ?? null,
       ingredients: {
         create: input.ingredients.map((ingredient, order) => ({ ...ingredient, order })),
       },
@@ -82,6 +88,11 @@ export async function updateRecipe(userId: string, id: string, input: UpdateReci
         ...(input.servings !== undefined && { servings: input.servings }),
         ...(input.prepTimeMinutes !== undefined && { prepTimeMinutes: input.prepTimeMinutes }),
         ...(input.cookTimeMinutes !== undefined && { cookTimeMinutes: input.cookTimeMinutes }),
+        ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
+        ...(input.imageThumbnailUrl !== undefined && { imageThumbnailUrl: input.imageThumbnailUrl }),
+        ...(input.imageSource !== undefined && { imageSource: input.imageSource }),
+        ...(input.imageAttributionName !== undefined && { imageAttributionName: input.imageAttributionName }),
+        ...(input.imageAttributionUrl !== undefined && { imageAttributionUrl: input.imageAttributionUrl }),
         ...(input.ingredients && {
           ingredients: {
             create: input.ingredients.map((ingredient, order) => ({ ...ingredient, order })),
@@ -102,11 +113,6 @@ export async function deleteRecipe(userId: string, id: string) {
   await prisma.recipe.delete({ where: { id } });
 }
 
-// Maps a non-recipe AiResponse to the error this endpoint returns. Reaching
-// the provider and getting a valid, schema-conforming response is still a
-// successful generation (logged as SUCCESS below) even when it's a refusal
-// or a food-info answer - this is a caller-contract mismatch (this endpoint
-// promises a recipe), not an upstream failure, so it's never logged FAILED.
 function toRecipeOnlyError(response: Extract<AiResponse, { type: "food_info" | "refused" }>) {
   if (response.type === "food_info") {
     return new UnprocessableEntityError(
@@ -123,7 +129,16 @@ function toRecipeOnlyError(response: Extract<AiResponse, { type: "food_info" | "
   );
 }
 
-export async function generateRecipeDraft(userId: string, prompt: string, consumerType: ConsumerType) {
+export interface GeneratedRecipe {
+  recipe: Omit<RecipeDraft, "imageSearchQuery">;
+  image: PhotoResult | null;
+}
+
+export async function generateRecipeDraft(
+  userId: string,
+  prompt: string,
+  consumerType: ConsumerType,
+): Promise<GeneratedRecipe> {
   let response: AiResponse;
   let raw: unknown;
 
@@ -154,12 +169,15 @@ export async function generateRecipeDraft(userId: string, prompt: string, consum
     throw toRecipeOnlyError(response);
   }
 
-  return response.recipe;
+  const { imageSearchQuery, ...recipe } = response.recipe;
+  const image = await resolveRecipeImage(imageSearchQuery);
+
+  return { recipe, image };
 }
 
 export type GenerateStreamEvent =
   | { type: "chunk"; text: string }
-  | { type: "done"; draft: RecipeDraft }
+  | { type: "done"; draft: Omit<RecipeDraft, "imageSearchQuery">; image: PhotoResult | null }
   | { type: "refused"; message: string; reasonCode: "OUT_OF_SCOPE" | "FOOD_INFO_NOT_RECIPE" | "UNSAFE_OR_UNCLEAR" }
   | { type: "error"; message: string };
 
@@ -217,7 +235,10 @@ export async function* generateRecipeDraftStream(
       return;
     }
 
-    yield { type: "done", draft: response.recipe as RecipeDraft };
+    const { imageSearchQuery, ...draft } = response.recipe;
+    const image = await resolveRecipeImage(imageSearchQuery);
+
+    yield { type: "done", draft, image };
   } catch (err) {
     if (signal?.aborted) return;
 
