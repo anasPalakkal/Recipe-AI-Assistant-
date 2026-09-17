@@ -14,7 +14,7 @@ export const messageIdParamSchema = z.object({
   messageId: z.string().cuid(),
 });
 
-const messageImageSourceSchema = z.enum(["PEXELS", "AI_GENERATED", "NONE"]);
+export const messageImageSourceSchema = z.enum(["PEXELS", "AI_GENERATED", "NONE"]);
 
 export interface ConversationSummary {
   id: string;
