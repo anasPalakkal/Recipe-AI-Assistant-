@@ -42,6 +42,12 @@ enum RecipeSource {
   AI
 }
 
+enum ImageSource {
+  PEXELS
+  AI_GENERATED
+  NONE
+}
+
 model Recipe {
   id              String            @id @default(cuid())
   userId          String
@@ -58,6 +64,12 @@ model Recipe {
   updatedAt       DateTime          @updatedAt
 
   chatMessages Message[]
+
+  imageUrl              String?
+  imageThumbnailUrl     String?
+  imageSource           ImageSource @default(NONE)
+  imageAttributionName  String?
+  imageAttributionUrl   String?
 
 
   // Supports both "list my recipes" and cursor pagination ordered by
@@ -195,6 +207,14 @@ content        String?
 savedRecipeId  String?
   savedRecipe    Recipe?      @relation(fields: [savedRecipeId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
+
+
+  imageUrl              String?
+  imageThumbnailUrl     String?
+  imageSource           ImageSource @default(NONE)
+  imageAttributionName  String?
+  imageAttributionUrl   String?
+
 
   responseType MessageResponseType? // set only on ASSISTANT messages; null for USER
 
