@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createRecipeSchema } from "./recipe.schema.js";
+import { recipeContentSchema } from "./recipe.schema.js";
 
 export const sendMessageSchema = z.object({
   prompt: z.string().trim().min(3).max(500),
@@ -14,6 +14,8 @@ export const messageIdParamSchema = z.object({
   messageId: z.string().cuid(),
 });
 
+const messageImageSourceSchema = z.enum(["PEXELS", "AI_GENERATED", "NONE"]);
+
 export interface ConversationSummary {
   id: string;
   title: string | null;
@@ -26,8 +28,13 @@ export interface MessageResponse {
   id: string;
   role: "USER" | "ASSISTANT";
   content: string | null;
-  recipeDraft: z.infer<typeof createRecipeSchema> | null;
+  recipeDraft: z.infer<typeof recipeContentSchema> | null;
   savedRecipeId: string | null;
+  imageUrl: string | null;
+  imageThumbnailUrl: string | null;
+  imageSource: z.infer<typeof messageImageSourceSchema>;
+  imageAttributionName: string | null;
+  imageAttributionUrl: string | null;
   createdAt: string;
 }
 
