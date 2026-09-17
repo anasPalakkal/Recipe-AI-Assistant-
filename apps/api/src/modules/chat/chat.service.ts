@@ -1,6 +1,7 @@
-import { Prisma, MessageRole, MessageResponseType, GenerationStatus } from "@prisma/client";
+import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus } from "@prisma/client";
 import { aiProvider } from "../../lib/ai/index.js";
 import { MAX_CHAT_HISTORY_TURNS } from "../../lib/ai/gemini.provider.js";
+import { resolveRecipeImage } from "../../lib/images/index.js";
 import type { ChatTurn } from "../../lib/ai/types.js";
 import { prisma } from "../../lib/prisma.js";
 import { NotFoundError, ConflictError, UnprocessableEntityError } from "../../lib/errors.js";
@@ -49,25 +50,46 @@ function toChatTurns(messages: StoredMessage[]): ChatTurn[] {
 // Maps a validated AiResponse onto the Prisma fields for an assistant
 // Message row. Each response type owns exactly one of content/recipeDraft -
 // the other is left null, so a row's shape always matches its responseType.
-function toAssistantMessageData(response: AiResponse) {
+// For "recipe", also resolves the stock photo here (same fail-open
+// contract as recipe.service.ts) before the message is ever persisted -
+// imageSearchQuery is consumed and never stored on the row.
+async function toAssistantMessageData(response: AiResponse) {
   switch (response.type) {
-    case "recipe":
+    case "recipe": {
+      const { imageSearchQuery, ...draft } = response.recipe;
+      const image = await resolveRecipeImage(imageSearchQuery);
       return {
         responseType: MessageResponseType.RECIPE,
         content: null,
-        recipeDraft: response.recipe as unknown as Prisma.InputJsonValue,
+        recipeDraft: draft as unknown as Prisma.InputJsonValue,
+        imageUrl: image?.url ?? null,
+        imageThumbnailUrl: image?.thumbnailUrl ?? null,
+        imageSource: image ? ImageSource.PEXELS : ImageSource.NONE,
+        imageAttributionName: image?.photographerName ?? null,
+        imageAttributionUrl: image?.sourcePageUrl ?? null,
       };
+    }
     case "food_info":
       return {
         responseType: MessageResponseType.FOOD_INFO,
         content: response.answer,
         recipeDraft: Prisma.JsonNull,
+        imageUrl: null,
+        imageThumbnailUrl: null,
+        imageSource: ImageSource.NONE,
+        imageAttributionName: null,
+        imageAttributionUrl: null,
       };
     case "refused":
       return {
         responseType: MessageResponseType.REFUSED,
         content: REFUSAL_MESSAGES[response.reason],
         recipeDraft: Prisma.JsonNull,
+        imageUrl: null,
+        imageThumbnailUrl: null,
+        imageSource: ImageSource.NONE,
+        imageAttributionName: null,
+        imageAttributionUrl: null,
       };
   }
 }
@@ -136,7 +158,6 @@ export async function updateConversation(
 
 export async function deleteConversation(userId: string, conversationId: string) {
   await getOwnedConversation(userId, conversationId);
-  // Messages cascade via the FK — no manual cleanup needed.
   await prisma.conversation.delete({ where: { id: conversationId } });
 }
 
@@ -162,14 +183,12 @@ export async function sendMessage(userId: string, conversationId: string, prompt
 
   const history = [...toChatTurns(priorMessages), { role: "user" as const, content: prompt }];
 
-  // If generation fails outright (upstream error), the user's message stays
-  // persisted but no assistant reply follows - retry is available. A
-  // refusal or food-info answer is NOT a failure - it's a valid reply.
   const response = await generateAndLog(userId, prompt, history);
+  const assistantData = await toAssistantMessageData(response);
 
   const [assistantMessage] = await prisma.$transaction([
     prisma.message.create({
-      data: { conversationId, role: MessageRole.ASSISTANT, ...toAssistantMessageData(response) },
+      data: { conversationId, role: MessageRole.ASSISTANT, ...assistantData },
     }),
     prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }),
   ]);
@@ -192,11 +211,12 @@ export async function regenerateMessage(userId: string, conversationId: string, 
 
   const history = toChatTurns(priorMessages);
   const response = await generateAndLog(userId, "regenerate", history);
+  const assistantData = await toAssistantMessageData(response);
 
   return prisma.message.update({
     where: { id: messageId },
     data: {
-      ...toAssistantMessageData(response),
+      ...assistantData,
       savedRecipeId: null, // a save from before regeneration is stale regardless of new type
     },
   });
@@ -214,7 +234,18 @@ export async function saveMessageAsRecipe(userId: string, conversationId: string
   }
   if (message.savedRecipeId) throw new ConflictError("This recipe has already been saved");
 
-  const draft = message.recipeDraft as unknown as Parameters<typeof recipeService.createRecipe>[1];
+  // recipeDraft holds only the recipe content; the image was resolved and
+  // stored on the message's own columns at generation time, so it's merged
+  // back in here rather than re-resolved.
+  const draft = {
+    ...(message.recipeDraft as Record<string, unknown>),
+    imageUrl: message.imageUrl,
+    imageThumbnailUrl: message.imageThumbnailUrl,
+    imageSource: message.imageSource,
+    imageAttributionName: message.imageAttributionName,
+    imageAttributionUrl: message.imageAttributionUrl,
+  } as unknown as Parameters<typeof recipeService.createRecipe>[1];
+
   const recipe = await recipeService.createRecipe(userId, draft);
 
   await prisma.message.update({
