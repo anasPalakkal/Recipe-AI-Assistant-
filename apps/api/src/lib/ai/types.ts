@@ -1,9 +1,14 @@
-import type { AiResponse } from "@recipeai/shared";
+import type { AiResponse, ImageAnalysisResponse } from "@recipeai/shared";
 
 export type ConsumerType = "internal" | "public";
 
 export interface AiGenerationResult {
   response: AiResponse;
+  raw: unknown;
+}
+
+export interface ImageAnalysisResult {
+  response: ImageAnalysisResponse;
   raw: unknown;
 }
 
@@ -26,4 +31,10 @@ export interface AiProvider {
     history: ChatTurn[],
     consumerType: ConsumerType,
   ): Promise<AiGenerationResult>;
+  analyzeImage(
+    imageBase64: string,
+    mimeType: string,
+    question: string | undefined,
+    consumerType: ConsumerType,
+  ): Promise<ImageAnalysisResult>;
 }
