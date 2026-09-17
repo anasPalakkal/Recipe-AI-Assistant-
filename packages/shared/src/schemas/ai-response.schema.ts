@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { createRecipeSchema } from "./recipe.schema.js"; // adjust path to wherever this is actually defined
+import { aiRecipeDraftSchema } from "./recipe.schema.js"; // adjust path to wherever this is actually defined
 
 export const aiRefusalReasonSchema = z.enum(["out_of_scope", "unsafe_or_unclear"]);
 
 export const aiResponseSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("recipe"),
-    recipe: createRecipeSchema,
+    recipe: aiRecipeDraftSchema,
   }),
   z.object({
     type: z.literal("food_info"),
