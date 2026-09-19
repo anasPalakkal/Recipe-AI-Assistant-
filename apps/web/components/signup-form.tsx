@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loginSchema } from "@recipeai/shared";
-import { login } from "@/lib/api/auth";
+import { signupSchema } from "@recipeai/shared";
+import { signup } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PasswordInput } from "@/components/auth/password-input";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 
-export function LoginForm() {
+export function SignupForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +24,7 @@ export function LoginForm() {
     event.preventDefault();
     setError(null);
 
-    const parsed = loginSchema.safeParse({ email, password });
+    const parsed = signupSchema.safeParse({ email, password });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid input");
       return;
@@ -32,11 +32,13 @@ export function LoginForm() {
 
     setIsSubmitting(true);
     try {
-      await login(parsed.data);
+      await signup(parsed.data);
+      // Session is created immediately on signup, before email verification.
+      // Verification is enforced per-endpoint on the backend, not gated here.
       router.push("/recipes");
       router.refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError ? err.message : "Signup failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -45,10 +47,10 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Log in</CardTitle>
+        <CardTitle>Create your account</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <GoogleSignInButton label="signin_with" onError={setError} />
+        <GoogleSignInButton label="signup_with" onError={setError} />
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <div className="h-px flex-1 bg-border" />
@@ -68,29 +70,26 @@ export function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground">
-                Forgot password?
-              </Link>
-            </div>
+            <Label htmlFor="password">Password</Label>
             <PasswordInput
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
               required
             />
+            <p className="text-xs text-muted-foreground">At least 8 characters.</p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Logging in..." : "Log in"}
+            {isSubmitting ? "Creating account..." : "Sign up"}
           </Button>
         </form>
 
         <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="font-medium text-foreground hover:text-primary">
-            Sign up
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-foreground hover:text-primary">
+            Log in
           </Link>
         </p>
       </CardContent>
