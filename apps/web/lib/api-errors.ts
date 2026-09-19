@@ -9,12 +9,20 @@ export class ApiError extends Error {
   }
 }
 
+// Backend errors are always shaped as { error: { code, message, details? } }
+// (see apps/api/src/lib/errors.ts, formatAppErrorBody). This unwraps that
+// envelope — a body without an "error" key just yields {}.
 export function extractErrorMessage(body: unknown): { message?: string; code?: string } {
-  if (body && typeof body === "object") {
-    const message =
-      "message" in body && typeof body.message === "string" ? body.message : undefined;
-    const code = "code" in body && typeof body.code === "string" ? body.code : undefined;
-    return { message, code };
+  if (!body || typeof body !== "object" || !("error" in body)) {
+    return {};
   }
-  return {};
+
+  const err = (body as { error: unknown }).error;
+  if (!err || typeof err !== "object") {
+    return {};
+  }
+
+  const message = "message" in err && typeof err.message === "string" ? err.message : undefined;
+  const code = "code" in err && typeof err.code === "string" ? err.code : undefined;
+  return { message, code };
 }
