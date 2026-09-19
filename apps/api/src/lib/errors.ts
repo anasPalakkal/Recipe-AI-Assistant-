@@ -52,7 +52,7 @@ export class TooManyRequestsError extends AppError {
     code = "TOO_MANY_REQUESTS",
     public readonly retryAfterSeconds?: number,
   ) {
-    super(message, 429, code);
+    super(message, 429, code, retryAfterSeconds !== undefined ? { retryAfterSeconds } : undefined);
   }
 }
 
