@@ -6,7 +6,10 @@ import { env } from "../config/env.js";
 import { UnauthorizedError } from "../lib/errors.js";
 
 const SESSION_COOKIE_NAME = "sid";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days, sliding
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // sliding, enforced in Redis
+// Outlives the Redis session on purpose: Server Components can't refresh
+// the browser cookie, so Redis alone decides when a session is over.
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -35,7 +38,7 @@ function cookieOptions() {
     sameSite: "lax" as const,
     path: "/",
     signed: true,
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge: COOKIE_MAX_AGE_SECONDS,
     domain: env.NODE_ENV === "production" ? env.COOKIE_DOMAIN : undefined,
   };
 }
@@ -60,7 +63,7 @@ export async function destroySession(request: FastifyRequest, reply: FastifyRepl
       }
     }
   }
-  reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
+  reply.clearCookie(SESSION_COOKIE_NAME, { path: "/", domain: cookieOptions().domain });
 }
 
 // Used by password reset: invalidates every active session for a user,
@@ -75,7 +78,7 @@ export async function revokeAllSessions(userId: string): Promise<void> {
 }
 
 export default fp(async function sessionPlugin(app: FastifyInstance) {
-  app.decorate("authenticate", async (request: FastifyRequest, reply: FastifyReply) => {
+  app.decorate("authenticate", async (request: FastifyRequest) => {
     const raw = request.cookies[SESSION_COOKIE_NAME];
     if (!raw) throw new UnauthorizedError("Not authenticated");
 
@@ -87,7 +90,6 @@ export default fp(async function sessionPlugin(app: FastifyInstance) {
     if (!userId) throw new UnauthorizedError("Session expired");
 
     await redis.expire(sessionKey(sessionId), SESSION_TTL_SECONDS);
-    reply.setCookie(SESSION_COOKIE_NAME, sessionId, cookieOptions());
 
     request.userId = userId;
   });
