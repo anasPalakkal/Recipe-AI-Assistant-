@@ -1,13 +1,20 @@
 import { z } from "zod";
 
+const emailSchema = z.string().email("Enter a valid email address").max(255);
+
+const newPasswordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(128, "Password must be at most 128 characters");
+
 export const signupSchema = z.object({
-  email: z.string().email().max(255),
-  password: z.string().min(8).max(128),
+  email: emailSchema,
+  password: newPasswordSchema,
 });
 
 export const loginSchema = z.object({
-  email: z.string().email().max(255),
-  password: z.string().min(1).max(128),
+  email: emailSchema,
+  password: z.string().min(1, "Password is required").max(128),
 });
 
 export const googleSignInSchema = z.object({
@@ -19,12 +26,12 @@ export const verifyEmailSchema = z.object({
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email().max(255),
+  email: emailSchema,
 });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  newPassword: z.string().min(8).max(128),
+  newPassword: newPasswordSchema,
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;

@@ -75,7 +75,7 @@ export function SignupForm() {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
+              // minLength={8}
               required
             />
             <p className="text-xs text-muted-foreground">At least 8 characters.</p>
