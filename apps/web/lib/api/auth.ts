@@ -1,13 +1,16 @@
-import type { LoginInput, SignupInput } from "@recipeai/shared";
+import type {
+  ForgotPasswordInput,
+  LoginInput,
+  ResetPasswordInput,
+  SignupInput,
+  VerifyEmailInput,
+} from "@recipeai/shared";
 import { apiPost } from "./request";
 
-// Inferred from auth.service.ts (getUserById's select) and auth.routes.ts
-// (toPublicUser) — not confirmed against apps/api/src/lib/user.ts directly.
-// Verify this against that file before relying on other fields existing.
 export interface PublicUser {
   id: string;
   email: string;
-  emailVerifiedAt: string | null;
+  emailVerified: boolean;
 }
 
 export function login(input: LoginInput): Promise<PublicUser> {
@@ -20,4 +23,24 @@ export function signup(input: SignupInput): Promise<PublicUser> {
 
 export function signInWithGoogle(idToken: string): Promise<PublicUser> {
   return apiPost<PublicUser>("/api/auth/google", { idToken });
+}
+
+export function logout(): Promise<void> {
+  return apiPost("/api/auth/logout", {});
+}
+
+export function verifyEmail(input: VerifyEmailInput): Promise<PublicUser> {
+  return apiPost<PublicUser>("/api/auth/verify-email", input);
+}
+
+export function resendVerification(): Promise<void> {
+  return apiPost("/api/auth/resend-verification", {});
+}
+
+export function forgotPassword(input: ForgotPasswordInput): Promise<{ message: string }> {
+  return apiPost("/api/auth/forgot-password", input);
+}
+
+export function resetPassword(input: ResetPasswordInput): Promise<void> {
+  return apiPost("/api/auth/reset-password", input);
 }

@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { ApiError, extractErrorMessage } from "./api-errors";
+import { ApiError,apiErrorFromResponse } from "./api-errors";
 
 export { ApiError };
 
@@ -26,19 +26,9 @@ export async function serverFetch<T>(path: string, init?: RequestInit): Promise<
     cache: "no-store",
   });
 
-  if (!response.ok) {
-    let message = "Request failed";
-    let code: string | undefined;
-    try {
-      const body: unknown = await response.json();
-      const parsed = extractErrorMessage(body);
-      message = parsed.message ?? message;
-      code = parsed.code;
-    } catch {
-      // response wasn't JSON, keep the default message
-    }
-    throw new ApiError(message, response.status, code);
-  }
+ if (!response.ok) {
+  throw await apiErrorFromResponse(response);
+}
 
   if (response.status === 204) {
     return undefined as T;

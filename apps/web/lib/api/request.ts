@@ -1,5 +1,4 @@
-import { ApiError, extractErrorMessage } from "@/lib/api-errors";
-
+import { apiErrorFromResponse } from "@/lib/api-errors";
 // Calls a same-origin Next.js Route Handler (e.g. /api/auth/login), never
 // the backend directly — the browser can't reach Fastify itself, and
 // doesn't need to: same-origin fetch sends the httpOnly session cookie
@@ -10,11 +9,9 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
     headers: { "content-type": "application/json", ...init.headers },
   });
 
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => null);
-    const { message, code } = extractErrorMessage(body);
-    throw new ApiError(message ?? "Request failed", response.status, code);
-  }
+ if (!response.ok) {
+  throw await apiErrorFromResponse(response);
+}
 
   if (response.status === 204) {
     return undefined as T;
