@@ -46,6 +46,12 @@ export class GoneError extends AppError {
   }
 }
 
+export class UnprocessableEntityError extends AppError {
+  constructor(message = "Unprocessable entity", code = "UNPROCESSABLE_ENTITY", details?: unknown) {
+    super(message, 422, code, details);
+  }
+}
+
 export class TooManyRequestsError extends AppError {
   constructor(
     message = "Too many requests",
@@ -70,10 +76,4 @@ export function formatAppErrorBody(error: AppError) {
       ...(error.details !== undefined ? { details: error.details } : {}),
     },
   };
-}
-
-export class UnprocessableEntityError extends AppError {
-  constructor(message = "Unprocessable entity", code = "UNPROCESSABLE_ENTITY", details?: unknown) {
-    super(message, 422, code, details);
-  }
 }
