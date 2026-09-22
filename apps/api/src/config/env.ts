@@ -16,8 +16,8 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1),
   GEMINI_API_KEY_PUBLIC: z.string().min(1),
 
-  RESEND_API_KEY: z.string().min(1),
-  RESEND_FROM_EMAIL: z.string().email(),
+  BREVO_API_KEY: z.string().min(1),
+  EMAIL_FROM: z.string().email(),
 
   PEXELS_API_KEY: z.string().min(1),
   // Base URL of the web app, used to build the password-reset link sent

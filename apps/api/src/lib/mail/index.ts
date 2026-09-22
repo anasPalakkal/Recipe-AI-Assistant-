@@ -1,5 +1,5 @@
-import { ResendEmailProvider } from "./resend.provider.js";
+import { BrevoEmailProvider } from "./brevo.provider.js";
 import type { EmailProvider } from "./types.js";
 
-export const emailProvider: EmailProvider = new ResendEmailProvider();
+export const emailProvider: EmailProvider = new BrevoEmailProvider();
 export type { EmailProvider } from "./types.js";
