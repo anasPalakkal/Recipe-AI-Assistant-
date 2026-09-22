@@ -2,7 +2,6 @@ import Link from "next/link";
 import { serverFetch } from "@/lib/api-client";
 import type { ListRecipesResponse } from "@recipeai/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +12,6 @@ export default async function RecipesPage() {
     <main className="mx-auto max-w-3xl p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your recipes</h1>
-        <Link href="/recipes/new" className={buttonVariants()}>
-          New recipe
-        </Link>
       </div>
 
       {items.length === 0 ? (
