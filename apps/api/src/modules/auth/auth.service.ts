@@ -3,21 +3,36 @@ import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { verifyGoogleIdToken } from "./google.provider.js";
 import { normalizeEmail } from "../../lib/email.js";
 import * as otpService from "./otp.service.js";
+import { revokeAllSessions } from "../../plugins/session.plugin.js";
 import { ConflictError, UnauthorizedError, NotFoundError } from "../../lib/errors.js";
 import type { SignupInput, LoginInput } from "@recipeai/shared";
 
 export async function signup(input: SignupInput) {
   const email = normalizeEmail(input.email);
+  const passwordHash = await hashPassword(input.password);
 
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    throw new ConflictError("An account with this email already exists");
-  }
 
-  const passwordHash = await hashPassword(input.password);
-  const user = await prisma.user.create({
-    data: { email, passwordHash, provider: "credentials" },
-  });
+  let user;
+  if (existing) {
+    if (existing.emailVerifiedAt) {
+      throw new ConflictError("An account with this email already exists");
+    }
+
+    // Unverified row: either an abandoned signup by the real owner, or
+    // this email squatted by someone who never verified it. Either way
+    // it proves nothing — this signup takes it over, and any session it
+    // had is revoked.
+    user = await prisma.user.update({
+      where: { id: existing.id },
+      data: { passwordHash, provider: "credentials", providerAccountId: null },
+    });
+    await revokeAllSessions(existing.id);
+  } else {
+    user = await prisma.user.create({
+      data: { email, passwordHash, provider: "credentials" },
+    });
+  }
 
   try {
     await otpService.sendVerificationCode(user.id, user.email);
@@ -66,9 +81,26 @@ export async function loginWithGoogle(idToken: string) {
 
   const existingByEmail = await prisma.user.findUnique({ where: { email } });
   if (existingByEmail) {
-    throw new ConflictError(
-      "An account with this email already exists. Log in with your password instead.",
-    );
+    if (existingByEmail.emailVerifiedAt) {
+      throw new ConflictError(
+        "An account with this email already exists. Log in with your password instead.",
+      );
+    }
+
+    // Google has already verified the requester controls this email —
+    // stronger proof of ownership than an unverified password signup.
+    // Take the row over.
+    const user = await prisma.user.update({
+      where: { id: existingByEmail.id },
+      data: {
+        provider: "google",
+        providerAccountId: profile.googleId,
+        emailVerifiedAt: new Date(),
+        passwordHash: null,
+      },
+    });
+    await revokeAllSessions(existingByEmail.id);
+    return user;
   }
 
   return prisma.user.create({
@@ -100,8 +132,7 @@ export async function verifyEmail(userId: string, code: string) {
 
   await otpService.verifyCode(userId, code);
 
-  await prisma.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
-  return prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  return prisma.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
 }
 
 export async function resendVerificationCode(userId: string): Promise<void> {
