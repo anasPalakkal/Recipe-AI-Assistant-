@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import * as visionService from "./vision.service.js";
 import { sessionRateLimitKey } from "../../lib/rate-limit.js";
-import { requireVerifiedEmail } from "../auth/require-verified-email.js";
 import { BadRequestError } from "../../lib/errors.js";
 
 const visionAnalyzeQuerySchema = z.object({
@@ -14,11 +13,9 @@ const visionAnalyzeQuerySchema = z.object({
 const VISION_RATE_LIMIT = { max: 5, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey };
 
 export default async function visionRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", app.authenticate);
-
   app.post(
     "/analyze",
-    { preHandler: requireVerifiedEmail, config: { rateLimit: VISION_RATE_LIMIT } },
+    { config: { rateLimit: VISION_RATE_LIMIT } },
     async (request, reply) => {
       const { question } = visionAnalyzeQuerySchema.parse(request.query);
 

@@ -8,6 +8,7 @@ import { env } from "./config/env.js";
 import { AppError, TooManyRequestsError, formatAppErrorBody } from "./lib/errors.js";
 import { MAX_UPLOAD_BYTES } from "./lib/vision/validate-image.js";
 import sessionPlugin from "./plugins/session.plugin.js";
+import { requireVerifiedEmail } from "./modules/auth/require-verified-email.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
@@ -28,10 +29,20 @@ export function buildApp(): FastifyInstance {
   app.register(sessionPlugin);
 
   app.register(authRoutes, { prefix: "/internal/auth" });
-  app.register(recipeRoutes, { prefix: "/internal/recipes" });
-  app.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
-  app.register(chatRoutes, { prefix: "/internal/chat" });
-  app.register(visionRoutes, { prefix: "/internal/vision" });
+
+  // Every route registered inside this scope requires an authenticated,
+  // email-verified session. A module registered here is protected by
+  // default — no per-route hook to remember or forget.
+  app.register(async (verified) => {
+    verified.addHook("preHandler", verified.authenticate);
+    verified.addHook("preHandler", requireVerifiedEmail);
+
+    verified.register(recipeRoutes, { prefix: "/internal/recipes" });
+    verified.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
+    verified.register(chatRoutes, { prefix: "/internal/chat" });
+    verified.register(visionRoutes, { prefix: "/internal/vision" });
+  });
+
   app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });
 
   app.get("/health", async () => ({ status: "ok" }));
