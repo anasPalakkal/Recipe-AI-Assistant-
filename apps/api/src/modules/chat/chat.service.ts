@@ -15,6 +15,17 @@ const REFUSAL_MESSAGES: Record<"out_of_scope" | "unsafe_or_unclear", string> = {
     "I can't help with that request. Feel free to ask me for a recipe or a food-related question instead.",
 };
 
+const MAX_TITLE_LENGTH = 60;
+
+// Cheap heuristic title from the first prompt - avoids a second LLM call
+// just to name the conversation. Swap for an AI-generated title later if
+// this proves too blunt; the call site only needs it to run once, on the
+// message that first sets conversation.title.
+function deriveTitleFromPrompt(prompt: string): string {
+  const trimmed = prompt.trim();
+  return trimmed.length > MAX_TITLE_LENGTH ? `${trimmed.slice(0, MAX_TITLE_LENGTH).trimEnd()}…` : trimmed;
+}
+
 async function getOwnedConversation(userId: string, conversationId: string) {
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, userId },
@@ -170,7 +181,7 @@ export async function getConversationWithMessages(userId: string, conversationId
 }
 
 export async function sendMessage(userId: string, conversationId: string, prompt: string) {
-  await getOwnedConversation(userId, conversationId);
+  const conversation = await getOwnedConversation(userId, conversationId);
 
   const priorMessages = await prisma.message.findMany({
     where: { conversationId },
@@ -186,14 +197,23 @@ export async function sendMessage(userId: string, conversationId: string, prompt
   const response = await generateAndLog(userId, prompt, history);
   const assistantData = await toAssistantMessageData(response);
 
-  const [assistantMessage] = await prisma.$transaction([
+  const [assistantMessage, updatedConversation] = await prisma.$transaction([
     prisma.message.create({
       data: { conversationId, role: MessageRole.ASSISTANT, ...assistantData },
     }),
-    prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        updatedAt: new Date(),
+        // Only the very first message names the conversation - a title the
+        // user has already set (or a prior message already generated) is
+        // never overwritten.
+        ...(conversation.title === null && { title: deriveTitleFromPrompt(prompt) }),
+      },
+    }),
   ]);
 
-  return { userMessage, assistantMessage };
+  return { userMessage, assistantMessage, conversation: updatedConversation };
 }
 
 export async function regenerateMessage(userId: string, conversationId: string, messageId: string) {
@@ -234,9 +254,6 @@ export async function saveMessageAsRecipe(userId: string, conversationId: string
   }
   if (message.savedRecipeId) throw new ConflictError("This recipe has already been saved");
 
-  // recipeDraft holds only the recipe content; the image was resolved and
-  // stored on the message's own columns at generation time, so it's merged
-  // back in here rather than re-resolved.
   const draft = {
     ...(message.recipeDraft as Record<string, unknown>),
     imageUrl: message.imageUrl,
