@@ -16,6 +16,8 @@ export const messageIdParamSchema = z.object({
 
 export const messageImageSourceSchema = z.enum(["PEXELS", "AI_GENERATED", "NONE"]);
 
+export const messageResponseTypeSchema = z.enum(["RECIPE", "FOOD_INFO", "REFUSED"]);
+
 export interface ConversationSummary {
   id: string;
   title: string | null;
@@ -28,6 +30,7 @@ export interface MessageResponse {
   id: string;
   role: "USER" | "ASSISTANT";
   content: string | null;
+  responseType: z.infer<typeof messageResponseTypeSchema> | null;
   recipeDraft: z.infer<typeof recipeContentSchema> | null;
   savedRecipeId: string | null;
   imageUrl: string | null;
@@ -41,6 +44,7 @@ export interface MessageResponse {
 export interface SendMessageResponse {
   userMessage: MessageResponse;
   assistantMessage: MessageResponse;
+  conversation: ConversationSummary;
 }
 
 export const updateConversationSchema = z
