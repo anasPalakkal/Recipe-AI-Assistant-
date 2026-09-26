@@ -186,6 +186,7 @@ enum MessageResponseType {
   RECIPE
   FOOD_INFO
   REFUSED
+  IMAGE_ANALYSIS
 }
 
 model Message {
@@ -214,6 +215,9 @@ savedRecipeId  String?
   imageSource           ImageSource @default(NONE)
   imageAttributionName  String?
   imageAttributionUrl   String?
+
+  userImageKey   String?
+  imageAnalysis  Json?
 
 
   responseType MessageResponseType? // set only on ASSISTANT messages; null for USER
