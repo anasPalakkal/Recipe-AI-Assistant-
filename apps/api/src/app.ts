@@ -15,7 +15,6 @@ import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
 import publicRecipeRoutes from "./modules/public-api/recipe.routes.js";
 import { redis } from "./lib/redis.js";
 import chatRoutes from "./modules/chat/chat.routes.js";
-import visionRoutes from "./modules/vision/vision.routes.js";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -40,7 +39,6 @@ export function buildApp(): FastifyInstance {
     verified.register(recipeRoutes, { prefix: "/internal/recipes" });
     verified.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
     verified.register(chatRoutes, { prefix: "/internal/chat" });
-    verified.register(visionRoutes, { prefix: "/internal/vision" });
   });
 
   app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });

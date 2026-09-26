@@ -50,3 +50,17 @@ export async function checkAndIncrementVisionQuota(
     return { allowed: false, used: 0, limit: dailyLimit, resetAt, redisUnavailable: true };
   }
 }
+
+// Compensating decrement for a failure that happens before the request
+// ever reaches Gemini (e.g. the image storage upload). Mirrors this
+// module's existing "a rejected upload shouldn't cost quota" principle.
+// Best-effort: a failure here just leaves the counter one higher than
+// ideal - not worth failing the request over.
+export async function rollbackVisionQuota(userId: string, logger: FastifyBaseLogger): Promise<void> {
+  const key = visionQuotaKey(userId);
+  try {
+    await redis.decr(key);
+  } catch (err) {
+    logger.warn({ err, userId }, "failed to roll back vision quota after a pre-Gemini failure");
+  }
+}
