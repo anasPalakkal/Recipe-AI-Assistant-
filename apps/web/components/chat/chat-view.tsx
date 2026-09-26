@@ -23,11 +23,32 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
 
   const [messages, setMessages] = useState(initialMessages);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  // Local object URL for the attached photo, shown as an optimistic
+  // preview in the pending bubble while the upload/analysis is in
+  // flight. Revoked as soon as it's no longer needed to avoid leaking
+  // the blob URL for the lifetime of the page.
+  const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isEmpty = messages.length === 0 && !pendingPrompt;
+  const isEmpty = messages.length === 0 && !pendingPrompt && !pendingImagePreview;
+
+  async function ensureConversationId(): Promise<string> {
+    if (conversationId) return conversationId;
+    const conversation = await chatApi.createConversation();
+    upsertConversation(conversation);
+    return conversation.id;
+  }
+
+  function clearPending() {
+    setPendingPrompt(null);
+    if (pendingImagePreview) {
+      URL.revokeObjectURL(pendingImagePreview);
+      setPendingImagePreview(null);
+    }
+    setSending(false);
+  }
 
   async function handleSend(prompt: string) {
     setError(null);
@@ -35,14 +56,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
     setSending(true);
 
     try {
-      let targetId = conversationId;
-
-      if (!targetId) {
-        const conversation = await chatApi.createConversation();
-        upsertConversation(conversation);
-        targetId = conversation.id;
-      }
-
+      const targetId = await ensureConversationId();
       const result = await chatApi.sendMessage(targetId, prompt);
       upsertConversation(result.conversation);
 
@@ -56,12 +70,34 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       }
 
       setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
-      setSending(false);
-      setPendingPrompt(null);
+      clearPending();
     } catch (err) {
       setError(toErrorMessage(err, "Failed to send message"));
-      setSending(false);
-      setPendingPrompt(null);
+      clearPending();
+    }
+  }
+
+  async function handleSendImage(file: File, question: string | undefined) {
+    setError(null);
+    setPendingPrompt(question ?? null);
+    setPendingImagePreview(URL.createObjectURL(file));
+    setSending(true);
+
+    try {
+      const targetId = await ensureConversationId();
+      const result = await chatApi.sendImageMessage(targetId, file, question);
+      upsertConversation(result.conversation);
+
+      if (!conversationId) {
+        router.replace(`/chat/${targetId}`);
+        return;
+      }
+
+      setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
+      clearPending();
+    } catch (err) {
+      setError(toErrorMessage(err, "Failed to analyze image"));
+      clearPending();
     }
   }
 
@@ -99,7 +135,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
           What do you want to cook today?
         </h1>
         <div className="w-full max-w-xl">
-          <ChatComposer onSend={handleSend} disabled={sending} />
+          <ChatComposer onSend={handleSend} onSendImage={handleSendImage} disabled={sending} />
         </div>
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       </div>
@@ -112,6 +148,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
         <MessageList
           messages={messages}
           pendingPrompt={pendingPrompt}
+          pendingImagePreview={pendingImagePreview}
           regeneratingId={regeneratingId}
           onRegenerate={handleRegenerate}
           onSave={handleSave}
@@ -119,7 +156,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       </div>
       <div className="border-t p-4">
         <div className="mx-auto w-full max-w-2xl">
-          <ChatComposer onSend={handleSend} disabled={sending} />
+          <ChatComposer onSend={handleSend} onSendImage={handleSendImage} disabled={sending} />
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
       </div>
