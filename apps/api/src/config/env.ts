@@ -20,8 +20,11 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().email(),
 
   PEXELS_API_KEY: z.string().min(1),
-  // Base URL of the web app, used to build the password-reset link sent
-  // by email (e.g. https://recipeai.app or http://localhost:3000).
+
+  CLOUDINARY_CLOUD_NAME: z.string().min(1),
+  CLOUDINARY_API_KEY: z.string().min(1),
+  CLOUDINARY_API_SECRET: z.string().min(1),
+
   APP_BASE_URL: z.string().url(),
 });
 
