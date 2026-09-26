@@ -17,16 +17,17 @@ export async function proxyToApi(path: string, init: RequestInit): Promise<NextR
   const apiResponse = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
-      "content-type": "application/json",
       ...(sid && { cookie: `sid=${sid.value}` }),
       ...init.headers,
     },
   });
 
-  const responseBody = apiResponse.status === 204 ? null : await apiResponse.text();
+  const responseBody = apiResponse.status === 204 ? null : await apiResponse.arrayBuffer();
   const response = new NextResponse(responseBody, {
     status: apiResponse.status,
-    headers: { "content-type": "application/json" },
+    headers: apiResponse.headers.get("content-type")
+      ? { "content-type": apiResponse.headers.get("content-type")! }
+      : {},
   });
 
   for (const cookie of apiResponse.headers.getSetCookie()) {

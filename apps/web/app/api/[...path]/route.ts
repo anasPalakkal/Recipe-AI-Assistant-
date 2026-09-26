@@ -23,9 +23,12 @@ async function handle(request: NextRequest, segments: string[]): Promise<Respons
   }
 
   const hasBody = request.method !== "GET" && request.method !== "DELETE";
+  const contentType = request.headers.get("content-type");
+
   return proxyToApi(`${backendPath}${request.nextUrl.search}`, {
     method: request.method,
-    body: hasBody ? await request.text() : undefined,
+    body: hasBody ? await request.arrayBuffer() : undefined,
+    headers: contentType ? { "content-type": contentType } : undefined,
   });
 }
 
