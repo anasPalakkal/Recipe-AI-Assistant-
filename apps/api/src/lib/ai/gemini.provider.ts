@@ -50,17 +50,18 @@ Never produce a "recipe" response as a workaround for an off-topic request, even
 
 const IMAGE_ANALYSIS_SYSTEM_INSTRUCTION = `You are a food-recognition assistant for a recipe app. You are given one image and must respond with exactly one JSON object matching this shape:
 {
-  "type": "food_analysis" | "not_food" | "unclear",
+  "type": "food_analysis" | "recipe" | "not_food" | "unclear",
   "foodName": string,             // present only when type is "food_analysis"
   "description": string,          // present only when type is "food_analysis"
   "likelyIngredients": string[],  // present only when type is "food_analysis"
   "nutrition": { ... },           // present only when type is "food_analysis"
   "suggestedRecipePrompt": string,// present only when type is "food_analysis"
+  "recipe": { ... },              // present only when type is "recipe"
   "detectedSubject": string,      // present only when type is "not_food"
   "reason": string                // present only when type is "unclear"
 }
 
-Choose "food_analysis" when the image clearly shows a food or dish. "description" is a short paragraph naming the dish and generally how it's prepared. "likelyIngredients" lists the ingredients you can reasonably infer are present. "nutrition" must be your best estimate per typical serving, with this shape:
+Choose "food_analysis" when the user's question (if any) asks what the dish is, its ingredients, or its nutrition - not how to make it. "description" is a short paragraph naming the dish and generally how it's prepared. "likelyIngredients" lists the ingredients you can reasonably infer are present. "nutrition" must be your best estimate per typical serving, with this shape:
 {
   "calories": number,
   "proteinGrams": number,
@@ -70,11 +71,26 @@ Choose "food_analysis" when the image clearly shows a food or dish. "description
 }
 These are always approximate visual estimates, never precise measurements - "confidence" must always be exactly "estimated". "suggestedRecipePrompt" must be a short, generic, literal phrase naming the dish (e.g. "garlic butter shrimp pasta"), suitable to pass directly into a separate recipe-generation request - not a full recipe, not the description text.
 
+Choose "recipe" when the user's question asks how to cook, make, or recreate the dish shown in the image (e.g. "how do I make this", "recipe for this please"). Return your best reconstruction of the dish as a full recipe, in this shape:
+{
+  "title": string,
+  "description": string | null,
+  "servings": number | null,
+  "prepTimeMinutes": number | null,
+  "cookTimeMinutes": number | null,
+  "ingredients": [{ "name": string, "quantity": number | null, "unit": string | null }],
+  "steps": [{ "content": string }],
+  "imageSearchQuery": string
+}
+"imageSearchQuery" must be a short, generic, literal description of the dish suitable for a stock photo search - never the recipe's stylized title, never brand names or marketing language.
+
+If no question is given alongside the image, default to "food_analysis", not "recipe".
+
 Choose "not_food" when the image does not show food - name what it does show in "detectedSubject" (e.g. "car", "toy", "person", "text document").
 
 Choose "unclear" when the image is too blurry, dark, or ambiguous to identify confidently - explain briefly in "reason".
 
-Every field in the JSON object must always be present in your response, even when not applicable to the type you chose - set any field that doesn't apply to null. For example, a "not_food" response must still include "foodName", "description", "likelyIngredients", "nutrition", and "suggestedRecipePrompt" as null.
+Every field in the JSON object must always be present in your response, even when not applicable to the type you chose - set any field that doesn't apply to null. For example, a "not_food" response must still include "foodName", "description", "likelyIngredients", "nutrition", "suggestedRecipePrompt", and "recipe" as null.
 
 Return only the JSON object - no markdown formatting, no commentary.`;
 
@@ -148,12 +164,13 @@ const NUTRITION_ESTIMATE_JSON_SCHEMA = {
 const IMAGE_ANALYSIS_JSON_SCHEMA = {
     type: "OBJECT",
     properties: {
-        type: { type: "STRING", enum: ["food_analysis", "not_food", "unclear"] },
+        type: { type: "STRING", enum: ["food_analysis", "recipe", "not_food", "unclear"] },
         foodName: { type: "STRING", nullable: true },
         description: { type: "STRING", nullable: true },
         likelyIngredients: { type: "ARRAY", items: { type: "STRING" }, nullable: true },
         nutrition: NUTRITION_ESTIMATE_JSON_SCHEMA,
         suggestedRecipePrompt: { type: "STRING", nullable: true },
+        recipe: { ...RECIPE_DRAFT_JSON_SCHEMA, nullable: true },
         detectedSubject: { type: "STRING", nullable: true },
         reason: { type: "STRING", nullable: true },
     },
@@ -164,6 +181,7 @@ const IMAGE_ANALYSIS_JSON_SCHEMA = {
         "likelyIngredients",
         "nutrition",
         "suggestedRecipePrompt",
+        "recipe",
         "detectedSubject",
         "reason",
     ],

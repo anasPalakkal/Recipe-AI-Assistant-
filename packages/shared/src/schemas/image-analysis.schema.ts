@@ -1,12 +1,11 @@
 import { z } from "zod";
+import { aiRecipeDraftSchema } from "./recipe.schema.js";
 
 export const nutritionEstimateSchema = z.object({
   calories: z.number().nonnegative(),
   proteinGrams: z.number().nonnegative(),
   carbsGrams: z.number().nonnegative(),
   fatGrams: z.number().nonnegative(),
-  // Literal, not a free string - forces every food_analysis response to
-  // carry this flag, so the client can never render nutrition as precise.
   confidence: z.literal("estimated"),
 });
 
@@ -17,9 +16,15 @@ export const imageAnalysisResponseSchema = z.discriminatedUnion("type", [
     description: z.string().min(1),
     likelyIngredients: z.array(z.string()).min(1),
     nutrition: nutritionEstimateSchema,
-    // A short, generic phrase suitable to pass directly into
-    // /recipes/generate as the prompt - not a full recipe itself.
     suggestedRecipePrompt: z.string().min(1),
+  }),
+  // The user asked how to cook the pictured dish rather than what's in
+  // it - same recipe shape text chat already produces, so it persists
+  // and renders through the exact same RecipeMessageCard path, not a
+  // separate one.
+  z.object({
+    type: z.literal("recipe"),
+    recipe: aiRecipeDraftSchema,
   }),
   z.object({
     type: z.literal("not_food"),

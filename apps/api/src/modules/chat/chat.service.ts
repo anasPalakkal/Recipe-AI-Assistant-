@@ -308,7 +308,16 @@ export async function sendImageMessage(
     },
   });
 
-  const assistantData = toImageAnalysisMessageData(analysisResponse);
+  // A cooking question about the photographed dish gets the exact same
+  // treatment as a text-chat recipe request - same Pexels-image
+  // resolution, same persisted shape, same RecipeMessageCard on the
+  // frontend. Only identification/nutrition questions stay on the
+  // image-analysis path.
+  const assistantData =
+    analysisResponse.type === "recipe"
+      ? await toAssistantMessageData({ type: "recipe", recipe: analysisResponse.recipe })
+      : toImageAnalysisMessageData(analysisResponse);
+
   const [assistantMessage, updatedConversation] = await prisma.$transaction([
     prisma.message.create({ data: { conversationId, role: MessageRole.ASSISTANT, ...assistantData } }),
     prisma.conversation.update({
