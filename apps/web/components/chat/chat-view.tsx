@@ -61,18 +61,14 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       upsertConversation(result.conversation);
 
       if (!conversationId) {
-        // Brand-new chat: hand off to its real URL. The [id] page re-fetches
-        // these same messages from the server on mount, so we deliberately
-        // leave sending/pendingPrompt as-is here rather than resetting them -
-        // this instance is being replaced, not continuing to render.
         router.replace(`/chat/${targetId}`);
         return;
       }
 
       setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
-      clearPending();
     } catch (err) {
       setError(toErrorMessage(err, "Failed to send message"));
+    } finally {
       clearPending();
     }
   }
@@ -94,9 +90,9 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       }
 
       setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
-      clearPending();
     } catch (err) {
       setError(toErrorMessage(err, "Failed to analyze image"));
+    } finally {
       clearPending();
     }
   }
