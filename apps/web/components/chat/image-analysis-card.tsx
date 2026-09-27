@@ -2,6 +2,14 @@ import type { ImageAnalysisResponse } from "@recipeai/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function ImageAnalysisCard({ analysis }: { analysis: ImageAnalysisResponse }) {
+  // message-list.tsx routes responseType "RECIPE" to RecipeMessageCard
+  // before this component is ever rendered - this branch should be
+  // unreachable in practice, but the type includes it, so it must be
+  // handled explicitly rather than assumed away.
+  if (analysis.type === "recipe") {
+    return null;
+  }
+
   if (analysis.type === "not_food") {
     return (
       <Card className="w-full">
