@@ -1,3 +1,4 @@
+import type { FastifyInstance } from "fastify";
 import { createApiKeySchema, apiKeyIdParamSchema, apiKeyUsageQuerySchema } from "@recipeai/shared";
 import * as apiKeyService from "./api-key.service.js";
 import * as usageService from "./usage.service.js";
@@ -35,7 +36,7 @@ export default async function apiKeyRoutes(app: FastifyInstance) {
     },
   );
 
-    app.get(
+  app.get(
     "/dashboard",
     { config: { rateLimit: CRUD_RATE_LIMIT } },
     async (request, reply) => {

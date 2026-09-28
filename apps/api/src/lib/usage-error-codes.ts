@@ -1,0 +1,4 @@
+export const USAGE_ERROR_CODE = {
+  RATE_LIMITED: "RATE_LIMITED",
+  QUOTA_EXCEEDED: "QUOTA_EXCEEDED",
+} as const;

@@ -6,6 +6,7 @@ import { apiKeyAuth } from "../../lib/api-key-auth.js";
 import { checkAndIncrementThrottle, type ThrottleCheckResult } from "../../lib/throttle.js";
 import { checkAndIncrementQuota, type QuotaCheckResult } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
+import { USAGE_ERROR_CODE } from "../../lib/usage-error-codes.js";
 import {
   AppError,
   TooManyRequestsError,
@@ -76,7 +77,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     setThrottleHeaders(reply, throttle);
 
     if (!throttle.allowed) {
-      const err = new TooManyRequestsError("Rate limit exceeded. Try again shortly.", "RATE_LIMITED", 60);
+      const err = new TooManyRequestsError("Rate limit exceeded. Try again shortly.", USAGE_ERROR_CODE.RATE_LIMITED, 60);
       reply.header("Retry-After", "60");
       await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
@@ -100,7 +101,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       // rejection and must not be reported to the caller as one.
       const err = quota.redisUnavailable
         ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
-        : new TooManyRequestsError("Monthly quota exceeded.", "QUOTA_EXCEEDED");
+        : new TooManyRequestsError("Monthly quota exceeded.", USAGE_ERROR_CODE.QUOTA_EXCEEDED);
       await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
