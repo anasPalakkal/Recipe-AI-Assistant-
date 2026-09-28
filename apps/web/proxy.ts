@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PROTECTED_PATHS = ["/recipes", "/verify-email"];
+const PROTECTED_PATHS = ["/chat", "/recipes", "/api-keys", "/verify-email"];
 
 // Optimistic check only: cookie presence, not validity. Real session
 // validation happens server-side in lib/session.ts.
@@ -16,5 +16,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/recipes/:path*", "/verify-email"],
+  matcher: ["/chat/:path*", "/recipes/:path*", "/api-keys/:path*", "/verify-email"],
 };
