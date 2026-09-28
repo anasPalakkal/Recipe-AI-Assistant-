@@ -4,13 +4,13 @@ import { proxyToApi } from "@/lib/api-proxy";
 const PROXIED_MODULES = new Set(["auth", "chat", "api-keys"]);
 
 function resolveBackendPath(segments: string[]): string | null {
-  if (segments.length < 2) return null;
+  if (segments.length < 1) return null;
   if (segments.some((segment) => segment === "." || segment === "..")) return null;
 
   const [module, ...rest] = segments;
   if (!module || !PROXIED_MODULES.has(module)) return null;
 
-  return `/internal/${module}/${rest.join("/")}`;
+  return rest.length > 0 ? `/internal/${module}/${rest.join("/")}` : `/internal/${module}`;
 }
 
 async function handle(request: NextRequest, segments: string[]): Promise<Response> {
