@@ -1,6 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import { createApiKeySchema, apiKeyIdParamSchema } from "@recipeai/shared";
+import { createApiKeySchema, apiKeyIdParamSchema, apiKeyUsageQuerySchema } from "@recipeai/shared";
 import * as apiKeyService from "./api-key.service.js";
+import * as usageService from "./usage.service.js";
 import { sessionRateLimitKey } from "../../lib/rate-limit.js";
 
 const CRUD_RATE_LIMIT = { max: 30, timeWindow: "1 minute", keyGenerator: sessionRateLimitKey };
@@ -32,6 +32,25 @@ export default async function apiKeyRoutes(app: FastifyInstance) {
       const { id } = apiKeyIdParamSchema.parse(request.params);
       await apiKeyService.revokeApiKey(request.userId!, id);
       return reply.status(204).send();
+    },
+  );
+
+    app.get(
+    "/dashboard",
+    { config: { rateLimit: CRUD_RATE_LIMIT } },
+    async (request, reply) => {
+      const dashboard = await usageService.getDashboard(request.userId!);
+      return reply.send(dashboard);
+    },
+  );
+
+  app.get(
+    "/usage",
+    { config: { rateLimit: CRUD_RATE_LIMIT } },
+    async (request, reply) => {
+      const query = apiKeyUsageQuerySchema.parse(request.query);
+      const usage = await usageService.getUsage(request.userId!, query);
+      return reply.send(usage);
     },
   );
 }

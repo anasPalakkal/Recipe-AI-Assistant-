@@ -20,15 +20,15 @@ const DEFAULT_MONTHLY_QUOTA = 300;
 async function logUsage(
   apiKeyId: string,
   statusCode: number,
+  errorCode: string | undefined,
   logger: FastifyBaseLogger,
 ): Promise<void> {
   try {
-    await prisma.usageRecord.create({ data: { apiKeyId, endpoint: ENDPOINT, statusCode } });
+    await prisma.usageRecord.create({ data: { apiKeyId, endpoint: ENDPOINT, statusCode, errorCode } });
   } catch (err) {
     logger.error({ err, apiKeyId, statusCode }, "failed to write usage record");
   }
 }
-
 function readIdempotencyKey(header: string | string[] | undefined): string | undefined {
   return Array.isArray(header) ? header[0] : header;
 }
@@ -78,7 +78,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     if (!throttle.allowed) {
       const err = new TooManyRequestsError("Rate limit exceeded. Try again shortly.", "RATE_LIMITED", 60);
       reply.header("Retry-After", "60");
-      await logUsage(apiKeyId, err.statusCode, request.log);
+      await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
 
@@ -101,13 +101,13 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       const err = quota.redisUnavailable
         ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
         : new TooManyRequestsError("Monthly quota exceeded.", "QUOTA_EXCEEDED");
-      await logUsage(apiKeyId, err.statusCode, request.log);
+      await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
 
     try {
       const draft = await recipeService.generateRecipeDraft(userId, prompt, "public");
-      await logUsage(apiKeyId, 200, request.log);
+      await logUsage(apiKeyId, 200, undefined, request.log);
       if (idempotencyKey) {
         await cacheResponse(apiKeyId, idempotencyKey, { statusCode: 200, body: draft }, request.log);
       }
@@ -115,7 +115,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     } catch (err) {
       if (err instanceof AppError) {
         const body = formatAppErrorBody(err);
-        await logUsage(apiKeyId, err.statusCode, request.log);
+        await logUsage(apiKeyId, err.statusCode, err.code, request.log);
         if (idempotencyKey) {
           await cacheResponse(apiKeyId, idempotencyKey, { statusCode: err.statusCode, body }, request.log);
         }
@@ -126,7 +126,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       // rethrow so the global error handler produces the standard 500 —
       // and deliberately don't cache it, since an unclassified failure
       // isn't safe to treat as a deterministic, replayable outcome.
-      await logUsage(apiKeyId, 500, request.log);
+      await logUsage(apiKeyId, 500, undefined, request.log);
       throw err;
     }
   });
