@@ -155,10 +155,9 @@ model UsageRecord {
   apiKey     ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   endpoint   String
   statusCode Int
+  errorCode  String?
   createdAt  DateTime @default(now())
 
-  // Supports both "usage for this key" and time-bucketed usage queries
-  // (e.g. this month's request count for a dashboard chart) in one index.
   @@index([apiKeyId, createdAt])
 }
 
