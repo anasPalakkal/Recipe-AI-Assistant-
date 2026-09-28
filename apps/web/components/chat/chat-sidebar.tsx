@@ -13,10 +13,9 @@ import {
     Book02Icon,
 } from "@hugeicons/core-free-icons";
 import type { ConversationSummary } from "@recipeai/shared";
-import type { PublicUser } from "@/lib/api/auth";
 import * as chatApi from "@/lib/api/chat";
-import { logout } from "@/lib/api/auth";
 import { useChatList } from "@/components/chat/chat-list-context";
+import { useCloseMobileNav } from "@/components/layout/mobile-nav-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,15 +32,11 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
-interface ChatSidebarProps {
-    user: PublicUser | null;
-    onNavigate?: () => void;
-}
-
-export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
+export function ChatSidebar() {
     const router = useRouter();
     const params = useParams<{ id?: string }>();
     const activeId = params?.id;
+    const closeMobileNav = useCloseMobileNav();
 
     const { conversations, upsertConversation, removeConversation } = useChatList();
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -54,7 +49,7 @@ export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
 
     function handleNewChat() {
         router.push("/chat");
-        onNavigate?.();
+        closeMobileNav();
     }
 
     async function handleTogglePin(conversation: ConversationSummary) {
@@ -108,23 +103,11 @@ export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
         }
     }
 
-    async function handleLogout() {
-        await logout();
-        router.push("/login");
-    }
-
     return (
-        <div className="flex h-full flex-col p-3">
-            <div className="mb-4 flex items-center gap-2 px-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-serif text-sm font-bold text-primary-foreground">
-                    R
-                </div>
-                <span className="font-serif text-lg font-semibold">RecipeAI</span>
-            </div>
-
+        <div className="flex h-full flex-col pb-3">
             <Link
                 href="/recipes"
-                onClick={onNavigate}
+                onClick={closeMobileNav}
                 className="mb-3 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground hover:bg-sidebar-accent"
             >
                 <HugeiconsIcon icon={Book02Icon} size={18} />
@@ -145,7 +128,7 @@ export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
                         editingId={editingId}
                         editValue={editValue}
                         busy={busy}
-                        onNavigate={onNavigate}
+                        onNavigate={closeMobileNav}
                         onTogglePin={handleTogglePin}
                         onStartEditing={startEditing}
                         onEditValueChange={setEditValue}
@@ -162,7 +145,7 @@ export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
                         editingId={editingId}
                         editValue={editValue}
                         busy={busy}
-                        onNavigate={onNavigate}
+                        onNavigate={closeMobileNav}
                         onTogglePin={handleTogglePin}
                         onStartEditing={startEditing}
                         onEditValueChange={setEditValue}
@@ -175,17 +158,6 @@ export function ChatSidebar({ user, onNavigate }: ChatSidebarProps) {
                     <p className="px-2 text-sm text-muted-foreground">No chats yet.</p>
                 )}
             </div>
-
-            {user && (
-                <div className="mt-3 border-t pt-3">
-                    <div className="flex items-center justify-between px-1">
-                        <span className="truncate text-sm text-muted-foreground">{user.email}</span>
-                        <Button variant="ghost" size="sm" onClick={handleLogout}>
-                            Log out
-                        </Button>
-                    </div>
-                </div>
-            )}
 
             <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
                 <DialogContent>
