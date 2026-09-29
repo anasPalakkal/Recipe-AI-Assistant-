@@ -7,6 +7,7 @@ import * as chatApi from "@/lib/api/chat";
 import { useChatList } from "@/components/chat/chat-list-context";
 import { MessageList } from "./message-list";
 import { ChatComposer } from "./chat-composer";
+import { MessageScroller } from "./message-scroller";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -140,7 +141,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <MessageScroller isSending={sending}>
         <MessageList
           messages={messages}
           pendingPrompt={pendingPrompt}
@@ -149,7 +150,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
           onRegenerate={handleRegenerate}
           onSave={handleSave}
         />
-      </div>
+      </MessageScroller>
       <div className="border-t p-4">
         <div className="mx-auto w-full max-w-2xl">
           <ChatComposer onSend={handleSend} onSendImage={handleSendImage} disabled={sending} />
