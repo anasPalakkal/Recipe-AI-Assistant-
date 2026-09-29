@@ -50,11 +50,11 @@ export function ApiKeyCard({ apiKey }: { apiKey: ApiKeySummary }) {
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <Button variant="outline" onClick={() => setConfirmOpen(true)}>
-          Revoke
+          Delete
         </Button>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke "{apiKey.name}"?</DialogTitle>
+            <DialogTitle>Delete "{apiKey.name}"?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Any application using this key will immediately lose access. This can't be undone.
@@ -64,7 +64,7 @@ export function ApiKeyCard({ apiKey }: { apiKey: ApiKeySummary }) {
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleRevoke} disabled={busy}>
-              {busy ? "Revoking…" : "Revoke"}
+              {busy ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

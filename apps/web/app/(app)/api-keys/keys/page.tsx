@@ -14,7 +14,7 @@ export default async function ApiKeysPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-serif text-2xl font-semibold">API keys</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Up to 5 active keys · each with its own rate limit and quota</p>
+          <p className="mt-1 text-sm text-muted-foreground">Authenticate requests to the RecipeAI API. Keep your keys secret</p>
         </div>
         <CreateKeyDialog />
       </div>
