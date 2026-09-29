@@ -18,6 +18,18 @@ const recipeInclude = {
   steps: { orderBy: { order: "asc" } },
 } satisfies Prisma.RecipeInclude;
 
+const recipeListSelect = {
+  id: true,
+  title: true,
+  description: true,
+  servings: true,
+  prepTimeMinutes: true,
+  cookTimeMinutes: true,
+  imageThumbnailUrl: true,
+  createdAt: true,
+  _count: { select: { ingredients: true, steps: true } },
+} satisfies Prisma.RecipeSelect;
+
 export async function createRecipe(userId: string, input: CreateRecipeInput) {
   return prisma.recipe.create({
     data: {
@@ -49,11 +61,17 @@ export async function listRecipes(userId: string, query: ListRecipesQuery) {
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: query.limit + 1,
     ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
-    include: recipeInclude,
+    select: recipeListSelect,
   });
 
   const hasMore = recipes.length > query.limit;
-  const items = hasMore ? recipes.slice(0, query.limit) : recipes;
+  const items = (hasMore ? recipes.slice(0, query.limit) : recipes).map(
+    ({ _count, ...recipe }) => ({
+      ...recipe,
+      ingredientCount: _count.ingredients,
+      stepCount: _count.steps,
+    }),
+  );
   const nextCursor = hasMore ? (items[items.length - 1]?.id ?? null) : null;
 
   return { items, nextCursor };

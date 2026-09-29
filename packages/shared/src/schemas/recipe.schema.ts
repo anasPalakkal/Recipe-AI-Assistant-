@@ -88,8 +88,21 @@ export interface RecipeResponse {
   steps: InstructionStepResponse[];
 }
 
+export interface RecipeListItem {
+  id: string;
+  title: string;
+  description: string | null;
+  servings: number | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  imageThumbnailUrl: string | null;
+  ingredientCount: number;
+  stepCount: number;
+  createdAt: string;
+}
+
 export interface ListRecipesResponse {
-  items: RecipeResponse[];
+  items: RecipeListItem[];
   nextCursor: string | null;
 }
 
