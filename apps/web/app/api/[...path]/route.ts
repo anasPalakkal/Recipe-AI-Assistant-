@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { proxyToApi } from "@/lib/api-proxy";
 
-const PROXIED_MODULES = new Set(["auth", "chat", "api-keys"]);
+const PROXIED_MODULES = new Set(["auth", "chat", "api-keys", "recipes"]);
 
 function resolveBackendPath(segments: string[]): string | null {
   if (segments.length < 1) return null;
