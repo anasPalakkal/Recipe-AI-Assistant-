@@ -208,24 +208,37 @@ export async function getConversationWithMessages(userId: string, conversationId
   return Promise.all(messages.map(withSignedUserImageUrl));
 }
 
+// Both rows are written together after generation, so the reply must sort
+// strictly after the user message even if generation finished instantly.
+function replyTimestamp(sentAt: Date): Date {
+  return new Date(Math.max(Date.now(), sentAt.getTime() + 1));
+}
+
 export async function sendMessage(userId: string, conversationId: string, prompt: string) {
   const conversation = await getOwnedConversation(userId, conversationId);
+  const sentAt = new Date();
 
   const priorMessages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
   });
 
-  const userMessage = await prisma.message.create({
-    data: { conversationId, role: MessageRole.USER, content: prompt },
-  });
-
   const history = [...toChatTurns(priorMessages), { role: "user" as const, content: prompt }];
   const response = await generateAndLog(userId, prompt, history);
   const assistantData = await toAssistantMessageData(response);
 
-  const [assistantMessage, updatedConversation] = await prisma.$transaction([
-    prisma.message.create({ data: { conversationId, role: MessageRole.ASSISTANT, ...assistantData } }),
+  const [userMessage, assistantMessage, updatedConversation] = await prisma.$transaction([
+    prisma.message.create({
+      data: { conversationId, role: MessageRole.USER, content: prompt, createdAt: sentAt },
+    }),
+    prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        createdAt: replyTimestamp(sentAt),
+        ...assistantData,
+      },
+    }),
     prisma.conversation.update({
       where: { id: conversationId },
       data: {
@@ -254,6 +267,7 @@ export async function sendImageMessage(
   logger: FastifyBaseLogger,
 ) {
   const conversation = await getOwnedConversation(userId, conversationId);
+  const sentAt = new Date();
 
   const { base64, mimeType } = await validateAndProcessImage(rawBuffer);
 
@@ -299,15 +313,6 @@ export async function sendImageMessage(
     throw err;
   }
 
-  const userMessage = await prisma.message.create({
-    data: {
-      conversationId,
-      role: MessageRole.USER,
-      content: question ?? null,
-      userImageKey,
-    },
-  });
-
   // A cooking question about the photographed dish gets the exact same
   // treatment as a text-chat recipe request - same Pexels-image
   // resolution, same persisted shape, same RecipeMessageCard on the
@@ -318,8 +323,24 @@ export async function sendImageMessage(
       ? await toAssistantMessageData({ type: "recipe", recipe: analysisResponse.recipe })
       : toImageAnalysisMessageData(analysisResponse);
 
-  const [assistantMessage, updatedConversation] = await prisma.$transaction([
-    prisma.message.create({ data: { conversationId, role: MessageRole.ASSISTANT, ...assistantData } }),
+  const [userMessage, assistantMessage, updatedConversation] = await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.USER,
+        content: question ?? null,
+        userImageKey,
+        createdAt: sentAt,
+      },
+    }),
+    prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        createdAt: replyTimestamp(sentAt),
+        ...assistantData,
+      },
+    }),
     prisma.conversation.update({
       where: { id: conversationId },
       data: {
