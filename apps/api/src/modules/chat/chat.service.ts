@@ -1,4 +1,4 @@
-import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus,RecipeSource } from "@prisma/client";
+import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus, RecipeSource } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { aiProvider } from "../../lib/ai/index.js";
 import { MAX_CHAT_HISTORY_TURNS } from "../../lib/ai/gemini.provider.js";
@@ -214,59 +214,92 @@ function replyTimestamp(sentAt: Date): Date {
   return new Date(Math.max(Date.now(), sentAt.getTime() + 1));
 }
 
-export async function sendMessage(userId: string, conversationId: string, prompt: string) {
-  const conversation = await getOwnedConversation(userId, conversationId);
+type AssistantMessageData =
+  | Awaited<ReturnType<typeof toAssistantMessageData>>
+  | ReturnType<typeof toImageAnalysisMessageData>;
+
+interface PersistExchangeParams {
+  userId: string;
+  conversationId: string | null;
+  needsTitle: boolean;
+  titleSource: string;
+  sentAt: Date;
+  userData: { content: string | null; userImageKey?: string };
+  assistantData: AssistantMessageData;
+}
+
+// A null conversationId creates the conversation in the same transaction,
+// so a failed generation never leaves an empty conversation behind.
+async function persistExchange(params: PersistExchangeParams) {
+  const { userId, conversationId, needsTitle, titleSource, sentAt, userData, assistantData } = params;
+
+  return prisma.$transaction(async (tx) => {
+    const id = conversationId ?? (await tx.conversation.create({ data: { userId } })).id;
+
+    const userMessage = await tx.message.create({
+      data: { conversationId: id, role: MessageRole.USER, createdAt: sentAt, ...userData },
+    });
+    const assistantMessage = await tx.message.create({
+      data: {
+        conversationId: id,
+        role: MessageRole.ASSISTANT,
+        createdAt: replyTimestamp(sentAt),
+        ...assistantData,
+      },
+    });
+    const conversation = await tx.conversation.update({
+      where: { id },
+      data: {
+        updatedAt: new Date(),
+        ...(needsTitle && { title: deriveTitleFromPrompt(titleSource) }),
+      },
+    });
+
+    return { userMessage, assistantMessage, conversation };
+  });
+}
+
+export async function sendMessage(userId: string, conversationId: string | null, prompt: string) {
+  const existing = conversationId ? await getOwnedConversation(userId, conversationId) : null;
   const sentAt = new Date();
 
-  const priorMessages = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
-  });
+  const priorMessages = existing
+    ? await prisma.message.findMany({
+      where: { conversationId: existing.id },
+      orderBy: { createdAt: "asc" },
+    })
+    : [];
 
   const history = [...toChatTurns(priorMessages), { role: "user" as const, content: prompt }];
   const response = await generateAndLog(userId, prompt, history);
   const assistantData = await toAssistantMessageData(response);
 
-  const [userMessage, assistantMessage, updatedConversation] = await prisma.$transaction([
-    prisma.message.create({
-      data: { conversationId, role: MessageRole.USER, content: prompt, createdAt: sentAt },
-    }),
-    prisma.message.create({
-      data: {
-        conversationId,
-        role: MessageRole.ASSISTANT,
-        createdAt: replyTimestamp(sentAt),
-        ...assistantData,
-      },
-    }),
-    prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-        ...(conversation.title === null && { title: deriveTitleFromPrompt(prompt) }),
-      },
-    }),
-  ]);
+  const exchange = await persistExchange({
+    userId,
+    conversationId,
+    needsTitle: !existing || existing.title === null,
+    titleSource: prompt,
+    sentAt,
+    userData: { content: prompt },
+    assistantData,
+  });
 
   return {
-    userMessage: await withSignedUserImageUrl(userMessage),
-    assistantMessage: await withSignedUserImageUrl(assistantMessage),
-    conversation: updatedConversation,
+    userMessage: await withSignedUserImageUrl(exchange.userMessage),
+    assistantMessage: await withSignedUserImageUrl(exchange.assistantMessage),
+    conversation: exchange.conversation,
   };
 }
 
-// The image-attached counterpart to sendMessage. Uploads to R2, runs
-// vision analysis (reusing the exact same validate/quota/analyze pipeline
-// the standalone vision endpoint used), and persists both turns - mirrors
-// sendMessage's shape and transaction structure.
+
 export async function sendImageMessage(
   userId: string,
-  conversationId: string,
+  conversationId: string | null,
   rawBuffer: Buffer,
   question: string | undefined,
   logger: FastifyBaseLogger,
 ) {
-  const conversation = await getOwnedConversation(userId, conversationId);
+  const existing = conversationId ? await getOwnedConversation(userId, conversationId) : null;
   const sentAt = new Date();
 
   const { base64, mimeType } = await validateAndProcessImage(rawBuffer);
@@ -313,47 +346,28 @@ export async function sendImageMessage(
     throw err;
   }
 
-  // A cooking question about the photographed dish gets the exact same
-  // treatment as a text-chat recipe request - same Pexels-image
-  // resolution, same persisted shape, same RecipeMessageCard on the
-  // frontend. Only identification/nutrition questions stay on the
-  // image-analysis path.
+  // A cooking question about the photographed dish gets the same treatment
+  // as a text-chat recipe request. Only identification/nutrition questions
+  // stay on the image-analysis path.
   const assistantData =
     analysisResponse.type === "recipe"
       ? await toAssistantMessageData({ type: "recipe", recipe: analysisResponse.recipe })
       : toImageAnalysisMessageData(analysisResponse);
 
-  const [userMessage, assistantMessage, updatedConversation] = await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        conversationId,
-        role: MessageRole.USER,
-        content: question ?? null,
-        userImageKey,
-        createdAt: sentAt,
-      },
-    }),
-    prisma.message.create({
-      data: {
-        conversationId,
-        role: MessageRole.ASSISTANT,
-        createdAt: replyTimestamp(sentAt),
-        ...assistantData,
-      },
-    }),
-    prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-        ...(conversation.title === null && { title: deriveTitleFromPrompt(question ?? "Photo analysis") }),
-      },
-    }),
-  ]);
+  const exchange = await persistExchange({
+    userId,
+    conversationId,
+    needsTitle: !existing || existing.title === null,
+    titleSource: question ?? "Photo analysis",
+    sentAt,
+    userData: { content: question ?? null, userImageKey },
+    assistantData,
+  });
 
   return {
-    userMessage: await withSignedUserImageUrl(userMessage),
-    assistantMessage: await withSignedUserImageUrl(assistantMessage),
-    conversation: updatedConversation,
+    userMessage: await withSignedUserImageUrl(exchange.userMessage),
+    assistantMessage: await withSignedUserImageUrl(exchange.assistantMessage),
+    conversation: exchange.conversation,
   };
 }
 

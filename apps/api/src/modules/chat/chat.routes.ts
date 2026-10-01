@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
     sendMessageSchema,
@@ -16,6 +16,37 @@ const CONVERSATION_RATE_LIMIT = { max: 60, timeWindow: "1 minute", keyGenerator:
 const imageMessageQuerySchema = z.object({
     question: z.string().trim().min(1).max(300).optional(),
 });
+
+// Image-attached messages are multipart/form-data, text-only messages are
+// JSON. Both the first-message and follow-up routes share this handling.
+async function dispatchMessage(request: FastifyRequest, conversationId: string | null) {
+    if (request.isMultipart()) {
+        const file = await request.file();
+        if (!file) {
+            throw new BadRequestError("No image file provided", "IMAGE_REQUIRED");
+        }
+        const buffer = await file.toBuffer();
+        if (file.file.truncated) {
+            throw new BadRequestError("Image exceeds the upload limit", "IMAGE_TOO_LARGE");
+        }
+
+        const questionField = file.fields.question;
+        const question =
+            questionField && "value" in questionField ? String(questionField.value) : undefined;
+        const { question: validatedQuestion } = imageMessageQuerySchema.parse({ question });
+
+        return chatService.sendImageMessage(
+            request.userId!,
+            conversationId,
+            buffer,
+            validatedQuestion,
+            request.log,
+        );
+    }
+
+    const { prompt } = sendMessageSchema.parse(request.body);
+    return chatService.sendMessage(request.userId!, conversationId, prompt);
+}
 
 export default async function chatRoutes(app: FastifyInstance) {
     app.post(
@@ -46,42 +77,21 @@ export default async function chatRoutes(app: FastifyInstance) {
         },
     );
 
-    // Multipart branch is checked first: an image-attached message is
-    // content-type multipart/form-data, a text-only message is JSON.
-    // Both post to the same URL - the frontend decides which body to send.
+    app.post(
+        "/messages",
+        { config: { rateLimit: CHAT_RATE_LIMIT } },
+        async (request, reply) => {
+            const result = await dispatchMessage(request, null);
+            return reply.status(201).send(result);
+        },
+    );
+
     app.post(
         "/conversations/:conversationId/messages",
         { config: { rateLimit: CHAT_RATE_LIMIT } },
         async (request, reply) => {
             const { conversationId } = conversationIdParamSchema.parse(request.params);
-
-            if (request.isMultipart()) {
-                const file = await request.file();
-                if (!file) {
-                    throw new BadRequestError("No image file provided", "IMAGE_REQUIRED");
-                }
-                const buffer = await file.toBuffer();
-                if (file.file.truncated) {
-                    throw new BadRequestError("Image exceeds the upload limit", "IMAGE_TOO_LARGE");
-                }
-
-                const questionField = file.fields.question;
-                const question =
-                    questionField && "value" in questionField ? String(questionField.value) : undefined;
-                const { question: validatedQuestion } = imageMessageQuerySchema.parse({ question });
-
-                const result = await chatService.sendImageMessage(
-                    request.userId!,
-                    conversationId,
-                    buffer,
-                    validatedQuestion,
-                    request.log,
-                );
-                return reply.status(201).send(result);
-            }
-
-            const { prompt } = sendMessageSchema.parse(request.body);
-            const result = await chatService.sendMessage(request.userId!, conversationId, prompt);
+            const result = await dispatchMessage(request, conversationId);
             return reply.status(201).send(result);
         },
     );

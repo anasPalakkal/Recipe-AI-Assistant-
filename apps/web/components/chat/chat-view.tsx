@@ -39,13 +39,6 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
 
   const isEmpty = messages.length === 0 && !pendingPrompt && !pendingImagePreview;
 
-  async function ensureConversationId(): Promise<string> {
-    if (conversationId) return conversationId;
-    const conversation = await chatApi.createConversation();
-    upsertConversation(conversation);
-    return conversation.id;
-  }
-
   function clearPending() {
     setPendingPrompt(null);
     if (pendingImagePreview) {
@@ -62,12 +55,13 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
     setSending(true);
 
     try {
-      const targetId = await ensureConversationId();
-      const result = await chatApi.sendMessage(targetId, prompt);
+      const result = conversationId
+        ? await chatApi.sendMessage(conversationId, prompt)
+        : await chatApi.startConversation(prompt);
       upsertConversation(result.conversation);
 
       if (!conversationId) {
-        router.replace(`/chat/${targetId}`);
+        router.replace(`/chat/${result.conversation.id}`);
         return;
       }
 
@@ -88,12 +82,13 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
     setSending(true);
 
     try {
-      const targetId = await ensureConversationId();
-      const result = await chatApi.sendImageMessage(targetId, file, question);
+      const result = conversationId
+        ? await chatApi.sendImageMessage(conversationId, file, question)
+        : await chatApi.startConversationWithImage(file, question);
       upsertConversation(result.conversation);
 
       if (!conversationId) {
-        router.replace(`/chat/${targetId}`);
+        router.replace(`/chat/${result.conversation.id}`);
         return;
       }
 
