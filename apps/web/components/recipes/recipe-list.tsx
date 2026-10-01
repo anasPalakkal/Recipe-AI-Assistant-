@@ -53,10 +53,12 @@ export function RecipeList({ initialItems, initialCursor }: RecipeListProps) {
 
   return (
     <div>
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((recipe) => (
-          <RecipeCard key={recipe.id} recipe={recipe} onDeleted={handleDeleted} />
-        ))}
+      <div className="@container">
+        <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-3 @3xl:gap-5">
+          {items.map((recipe) => (
+            <RecipeCard key={recipe.id} recipe={recipe} onDeleted={handleDeleted} />
+          ))}
+        </div>
       </div>
 
       {error && <p className="mt-4 text-center text-sm text-destructive">{error}</p>}

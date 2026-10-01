@@ -36,8 +36,8 @@ export function RecipeCard({ recipe, onDeleted }: RecipeCardProps) {
           </div>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <h2 className="line-clamp-2 font-serif text-lg font-semibold leading-snug">
+      <div className="flex flex-1 flex-col gap-1 p-3 sm:gap-1.5 sm:p-4">
+        <h2 className="line-clamp-2 font-serif text-base font-semibold leading-snug sm:text-lg">
           <Link
             href={`/recipes/${recipe.id}`}
             className="outline-none after:absolute after:inset-0"
@@ -46,9 +46,11 @@ export function RecipeCard({ recipe, onDeleted }: RecipeCardProps) {
           </Link>
         </h2>
         {recipe.description && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">{recipe.description}</p>
+          <p className="line-clamp-2 hidden text-sm text-muted-foreground sm:block">
+            {recipe.description}
+          </p>
         )}
-        <p className="mt-auto pt-2 text-xs text-muted-foreground">{meta}</p>
+        <p className="mt-auto pt-1 text-xs text-muted-foreground sm:pt-2">{meta}</p>
       </div>
       <RecipeCardMenu recipe={recipe} onDeleted={onDeleted} />
     </div>

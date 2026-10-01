@@ -1,4 +1,4 @@
-import { Prisma, GenerationStatus } from "@prisma/client";
+import { Prisma, GenerationStatus, RecipeSource } from "@prisma/client";
 import type { ConsumerType } from "../../lib/ai/types.js";
 import { aiProvider } from "../../lib/ai/index.js";
 import { resolveRecipeImage, type PhotoResult } from "../../lib/images/index.js";
@@ -30,10 +30,20 @@ const recipeListSelect = {
   _count: { select: { ingredients: true, steps: true } },
 } satisfies Prisma.RecipeSelect;
 
-export async function createRecipe(userId: string, input: CreateRecipeInput) {
-  return prisma.recipe.create({
+interface CreateRecipeOptions {
+  source?: RecipeSource;
+  db?: Prisma.TransactionClient;
+}
+
+export async function createRecipe(
+  userId: string,
+  input: CreateRecipeInput,
+  { source = RecipeSource.USER, db = prisma }: CreateRecipeOptions = {},
+) {
+  return db.recipe.create({
     data: {
       userId,
+      source,
       title: input.title,
       description: input.description ?? null,
       servings: input.servings ?? null,

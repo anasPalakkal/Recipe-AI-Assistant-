@@ -1,4 +1,4 @@
-import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus } from "@prisma/client";
+import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus,RecipeSource } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { aiProvider } from "../../lib/ai/index.js";
 import { MAX_CHAT_HISTORY_TURNS } from "../../lib/ai/gemini.provider.js";
@@ -405,7 +405,18 @@ export async function saveMessageAsRecipe(userId: string, conversationId: string
     imageAttributionUrl: message.imageAttributionUrl,
   } as unknown as Parameters<typeof recipeService.createRecipe>[1];
 
-  const recipe = await recipeService.createRecipe(userId, draft);
-  await prisma.message.update({ where: { id: messageId }, data: { savedRecipeId: recipe.id } });
-  return recipe;
+  return prisma.$transaction(async (tx) => {
+    const recipe = await recipeService.createRecipe(userId, draft, {
+      source: RecipeSource.AI,
+      db: tx,
+    });
+
+    const claimed = await tx.message.updateMany({
+      where: { id: messageId, savedRecipeId: null },
+      data: { savedRecipeId: recipe.id },
+    });
+    if (claimed.count === 0) throw new ConflictError("This recipe has already been saved");
+
+    return recipe;
+  });
 }
