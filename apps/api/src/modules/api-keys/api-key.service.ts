@@ -24,7 +24,7 @@ export async function createApiKey(userId: string, input: CreateApiKeyInput) {
 
         if (activeCount >= MAX_ACTIVE_API_KEYS) {
           throw new ConflictError(
-            `You can have at most ${MAX_ACTIVE_API_KEYS} active API keys. Revoke one before creating another.`,
+            `You've reached the limit of ${MAX_ACTIVE_API_KEYS} active API keys. Delete one to create a new key`,
             "API_KEY_LIMIT_REACHED",
           );
         }
