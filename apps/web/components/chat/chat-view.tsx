@@ -6,7 +6,7 @@ import type { MessageResponse } from "@recipeai/shared";
 import * as chatApi from "@/lib/api/chat";
 import { useChatList } from "@/components/chat/chat-list-context";
 import { MessageList } from "./message-list";
-import { ChatComposer } from "./chat-composer";
+import { ChatComposer, type ComposerDraft } from "./chat-composer";
 import { MessageScroller } from "./message-scroller";
 
 interface ChatViewProps {
@@ -32,6 +32,10 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
   const [sending, setSending] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The composer remounts when the layout switches between the empty state
+  // and the message view, so a failed draft is held here and handed back
+  // through initialDraft. The id forces a fresh composer per failure.
+  const [failedDraft, setFailedDraft] = useState<{ id: number; draft: ComposerDraft } | null>(null);
 
   const isEmpty = messages.length === 0 && !pendingPrompt && !pendingImagePreview;
 
@@ -53,6 +57,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
 
   async function handleSend(prompt: string) {
     setError(null);
+    setFailedDraft(null);
     setPendingPrompt(prompt);
     setSending(true);
 
@@ -69,6 +74,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
     } catch (err) {
       setError(toErrorMessage(err, "Failed to send message"));
+      setFailedDraft({ id: Date.now(), draft: { text: prompt, image: null } });
     } finally {
       clearPending();
     }
@@ -76,6 +82,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
 
   async function handleSendImage(file: File, question: string | undefined) {
     setError(null);
+    setFailedDraft(null);
     setPendingPrompt(question ?? null);
     setPendingImagePreview(URL.createObjectURL(file));
     setSending(true);
@@ -93,6 +100,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       setMessages((prev) => [...prev, result.userMessage, result.assistantMessage]);
     } catch (err) {
       setError(toErrorMessage(err, "Failed to analyze image"));
+      setFailedDraft({ id: Date.now(), draft: { text: question ?? "", image: file } });
     } finally {
       clearPending();
     }
@@ -125,15 +133,23 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
     }
   }
 
+  const composer = (
+    <ChatComposer
+      key={failedDraft?.id}
+      initialDraft={failedDraft?.draft}
+      onSend={handleSend}
+      onSendImage={handleSendImage}
+      disabled={sending}
+    />
+  );
+
   if (isEmpty) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-6">
         <h1 className="mb-6 text-center font-serif text-3xl font-semibold">
           What do you want to cook today?
         </h1>
-        <div className="w-full max-w-xl">
-          <ChatComposer onSend={handleSend} onSendImage={handleSendImage} disabled={sending} />
-        </div>
+        <div className="w-full max-w-xl">{composer}</div>
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       </div>
     );
@@ -153,7 +169,7 @@ export function ChatView({ conversationId, initialMessages }: ChatViewProps) {
       </MessageScroller>
       <div className="border-t p-4">
         <div className="mx-auto w-full max-w-2xl">
-          <ChatComposer onSend={handleSend} onSendImage={handleSendImage} disabled={sending} />
+          {composer}
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
       </div>
