@@ -6,6 +6,7 @@ import {
   verifyEmailSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  updateProfileSchema, 
 } from "@recipeai/shared";
 import * as authService from "./auth.service.js";
 import * as passwordResetService from "./password-reset.service.js";
@@ -103,4 +104,10 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(204).send();
     },
   );
+
+  app.patch("/me", { preHandler: app.authenticate }, async (request, reply) => {
+  const body = updateProfileSchema.parse(request.body);
+  const user = await authService.updateProfile(request.userId!, body);
+  return reply.send(toPublicUser(user));
+});
 }

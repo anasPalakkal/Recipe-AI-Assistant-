@@ -8,6 +8,7 @@ export interface GoogleProfile {
   googleId: string;
   email: string;
   emailVerified: boolean;
+  name: string | null;
 }
 
 export async function verifyGoogleIdToken(idToken: string) {
@@ -24,6 +25,7 @@ export async function verifyGoogleIdToken(idToken: string) {
       googleId: payload.sub,
       email: payload.email,
       emailVerified: payload.email_verified ?? false,
+      name: payload.name ?? null,
     };
   } catch (err) {
     if (err instanceof UnauthorizedError) throw err;

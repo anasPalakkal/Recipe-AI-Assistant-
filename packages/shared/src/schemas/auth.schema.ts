@@ -34,9 +34,14 @@ export const resetPasswordSchema = z.object({
   newPassword: newPasswordSchema,
 });
 
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(1, "Name cannot be empty").max(100, "Name is too long"),
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type GoogleSignInInput = z.infer<typeof googleSignInSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

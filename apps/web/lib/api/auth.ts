@@ -5,11 +5,12 @@ import type {
   SignupInput,
   VerifyEmailInput,
 } from "@recipeai/shared";
-import { apiPost } from "./request";
+import { apiPatch, apiPost } from "./request";
 
 export interface PublicUser {
   id: string;
   email: string;
+  name: string | null;
   emailVerified: boolean;
 }
 
@@ -43,4 +44,8 @@ export function forgotPassword(input: ForgotPasswordInput): Promise<{ message: s
 
 export function resetPassword(input: ResetPasswordInput): Promise<void> {
   return apiPost("/api/auth/reset-password", input);
+}
+
+export function updateProfile(input: { name: string }): Promise<PublicUser> {
+  return apiPatch<PublicUser>("/api/auth/me", input);
 }

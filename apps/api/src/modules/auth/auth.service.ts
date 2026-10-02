@@ -5,7 +5,7 @@ import { normalizeEmail } from "../../lib/email.js";
 import * as otpService from "./otp.service.js";
 import { revokeAllSessions } from "../../plugins/session.plugin.js";
 import { ConflictError, UnauthorizedError, NotFoundError } from "../../lib/errors.js";
-import type { SignupInput, LoginInput } from "@recipeai/shared";
+import type { SignupInput, LoginInput, UpdateProfileInput } from "@recipeai/shared";
 
 export async function signup(input: SignupInput) {
   const email = normalizeEmail(input.email);
@@ -97,6 +97,7 @@ export async function loginWithGoogle(idToken: string) {
         providerAccountId: profile.googleId,
         emailVerifiedAt: new Date(),
         passwordHash: null,
+        name: existingByEmail.name ?? profile.name,
       },
     });
     await revokeAllSessions(existingByEmail.id);
@@ -109,6 +110,7 @@ export async function loginWithGoogle(idToken: string) {
       provider: "google",
       providerAccountId: profile.googleId,
       emailVerifiedAt: new Date(),
+      name: profile.name,
     },
   });
 }
@@ -116,7 +118,7 @@ export async function loginWithGoogle(idToken: string) {
 export async function getUserById(id: string) {
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, email: true, emailVerifiedAt: true },
+    select: { id: true, email: true, name: true, emailVerifiedAt: true },
   });
   if (!user) throw new NotFoundError("User not found");
   return user;
@@ -144,4 +146,11 @@ export async function resendVerificationCode(userId: string): Promise<void> {
   }
 
   await otpService.sendVerificationCode(userId, user.email);
+}
+
+export async function updateProfile(userId: string, input: UpdateProfileInput) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new NotFoundError("User not found");
+
+  return prisma.user.update({ where: { id: userId }, data: { name: input.name } });
 }

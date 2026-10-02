@@ -9,6 +9,7 @@ import { logout } from "@/lib/api/auth";
 import { Button } from "@/components/ui/button";
 import { SidebarTabs } from "@/components/layout/sidebar-tabs";
 import { MobileNavProvider } from "@/components/layout/mobile-nav-context";
+import { getDisplayName } from "@/lib/utils";
 
 interface AppShellProps {
   user: PublicUser | null;
@@ -29,9 +30,8 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
     <MobileNavProvider close={() => setMobileNavOpen(false)}>
       <div className="flex h-dvh w-full overflow-hidden">
         <div
-          className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r bg-sidebar transition-transform md:static md:translate-x-0 ${
-            mobileNavOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r bg-sidebar transition-transform md:static md:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
         >
           <div className="flex flex-col gap-3 p-3 pb-0">
             <div className="flex items-center gap-2 px-1">
@@ -48,7 +48,7 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
           {user && (
             <div className="border-t p-3">
               <div className="flex items-center justify-between px-1">
-                <span className="truncate text-sm text-muted-foreground">{user.email}</span>
+                <span className="truncate text-sm text-muted-foreground">{getDisplayName(user)}</span>
                 <Button variant="ghost" size="sm" onClick={handleLogout}>
                   Log out
                 </Button>
