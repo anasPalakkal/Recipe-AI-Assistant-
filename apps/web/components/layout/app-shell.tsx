@@ -1,15 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon } from "@hugeicons/core-free-icons";
 import type { PublicUser } from "@/lib/api/auth";
-import { logout } from "@/lib/api/auth";
 import { Button } from "@/components/ui/button";
 import { SidebarTabs } from "@/components/layout/sidebar-tabs";
 import { MobileNavProvider } from "@/components/layout/mobile-nav-context";
-import { getDisplayName } from "@/lib/utils";
+import { AccountMenu } from "@/components/layout/account-menu";
 
 interface AppShellProps {
   user: PublicUser | null;
@@ -19,12 +17,6 @@ interface AppShellProps {
 
 export function AppShell({ user, sidebarContent, children }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const router = useRouter();
-
-  async function handleLogout() {
-    await logout();
-    router.push("/login");
-  }
 
   return (
     <MobileNavProvider close={() => setMobileNavOpen(false)}>
@@ -46,13 +38,8 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">{sidebarContent}</div>
 
           {user && (
-            <div className="border-t p-3">
-              <div className="flex items-center justify-between px-1">
-                <span className="truncate text-sm text-muted-foreground">{getDisplayName(user)}</span>
-                <Button variant="ghost" size="sm" onClick={handleLogout}>
-                  Log out
-                </Button>
-              </div>
+            <div className="border-t p-2">
+              <AccountMenu user={user} />
             </div>
           )}
         </div>
