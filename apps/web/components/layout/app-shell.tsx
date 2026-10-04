@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon } from "@hugeicons/core-free-icons";
+import { Logo } from "@/components/brand/logo";
 import type { PublicUser } from "@/lib/api/auth";
 import { Button } from "@/components/ui/button";
 import { SidebarTabs } from "@/components/layout/sidebar-tabs";
@@ -21,21 +22,21 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
   return (
     <MobileNavProvider close={() => setMobileNavOpen(false)}>
       <div className="flex h-dvh w-full overflow-hidden">
+        {/* Sidebar */}
         <div
           className={`fixed inset-y-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r bg-sidebar transition-transform md:static md:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"
             }`}
         >
           <div className="flex flex-col gap-3 p-3 pb-0">
-            <div className="flex items-center gap-2 px-1">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-serif text-sm font-bold text-primary-foreground">
-                R
-              </div>
-              <span className="font-serif text-lg font-semibold">RecipeAI</span>
+            <div className="px-1">
+              <Logo />
             </div>
             <SidebarTabs />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">{sidebarContent}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">
+            {sidebarContent}
+          </div>
 
           {user && (
             <div className="border-t p-2">
@@ -44,6 +45,7 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
           )}
         </div>
 
+        {/* Mobile backdrop */}
         {mobileNavOpen && (
           <button
             type="button"
@@ -53,9 +55,15 @@ export function AppShell({ user, sidebarContent, children }: AppShellProps) {
           />
         )}
 
+        {/* Main Content Area */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-center border-b p-3 md:hidden">
-            <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open navigation"
+              onClick={() => setMobileNavOpen(true)}
+            >
               <HugeiconsIcon icon={Menu01Icon} />
             </Button>
           </div>

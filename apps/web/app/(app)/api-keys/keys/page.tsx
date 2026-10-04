@@ -2,6 +2,7 @@ import { serverFetch } from "@/lib/api-client";
 import type { ApiKeySummary } from "@recipeai/shared";
 import { CreateKeyDialog } from "@/components/api-keys/create-key-dialog";
 import { ApiKeyCard } from "@/components/api-keys/api-key-card";
+import { APP_NAME } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +15,14 @@ export default async function ApiKeysPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-serif text-2xl font-semibold">API keys</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Authenticate requests to the RecipeAI API. Keep your keys secret</p>
+          <p className="mt-1 text-sm text-muted-foreground">Authenticate requests to the {APP_NAME} API. Keep your keys secret</p>
         </div>
         <CreateKeyDialog />
       </div>
 
       {activeKeys.length === 0 ? (
         <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No active API keys yet. Create one to start using the RecipeAI API.
+          No active API keys yet. Create one to start using the {APP_NAME} API
         </p>
       ) : (
         <div className="space-y-3">

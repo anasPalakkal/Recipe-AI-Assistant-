@@ -1,1 +1,1 @@
-export const APP_NAME = "RecipeAI";
+export const APP_NAME = "Cookloom";
