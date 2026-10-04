@@ -1,4 +1,4 @@
-// lib/session.ts
+import { cookies } from "next/headers";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { ApiError, serverFetch } from "@/lib/api-client";
@@ -24,4 +24,15 @@ export async function requireVerifiedUser(): Promise<PublicUser> {
   const user = await requireUser();
   if (!user.emailVerified) redirect("/verify-email");
   return user;
+}
+
+export async function getOptionalUser(): Promise<PublicUser | null> {
+  const cookieStore = await cookies();
+  if (!cookieStore.has("sid")) return null;
+
+  try {
+    return await getCurrentUser();
+  } catch {
+    return null;
+  }
 }
