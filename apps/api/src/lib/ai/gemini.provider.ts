@@ -94,6 +94,8 @@ Every field in the JSON object must always be present in your response, even whe
 
 Return only the JSON object - no markdown formatting, no commentary.`;
 
+const SINGLE_RECIPE_ADDENDUM = `This request comes from an API that only returns recipes. When the request asks how to make or prepare a dish, sauce, drink, or ingredient (for example "how to make buttermilk"), treat it as a recipe request and choose "recipe". Use "food_info" only for factual questions that cannot be answered as a recipe, such as nutrition facts.`;
+
 interface GeminiApiResponse {
     candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
@@ -198,7 +200,7 @@ function generationConfig(responseSchema: object) {
 
 function buildRequestBody(prompt: string) {
     return JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION + SINGLE_RECIPE_ADDENDUM }] },
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: generationConfig(AI_RESPONSE_JSON_SCHEMA),
     });
@@ -302,7 +304,7 @@ async function fetchNonStreamingWithRetry(
     let statusRetriesUsed = 0;
     let timeoutRetriesUsed = 0;
 
-    for (;;) {
+    for (; ;) {
         const timeout = createTimeoutController(REQUEST_TIMEOUT_MS);
         let response: Response | undefined;
         let timedOut = false;
