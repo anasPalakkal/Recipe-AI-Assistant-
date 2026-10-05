@@ -36,3 +36,8 @@ export async function getOptionalUser(): Promise<PublicUser | null> {
     return null;
   }
 }
+
+export async function redirectIfVerified(): Promise<void> {
+  const user = await getOptionalUser();
+  if (user?.emailVerified) redirect("/chat");
+}

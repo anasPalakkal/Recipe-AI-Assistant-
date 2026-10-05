@@ -53,7 +53,7 @@ export function VerifyEmailForm({ email }: { email: string }) {
     setIsVerifying(true);
     try {
       await verifyEmail(parsed.data);
-      router.push("/recipes");
+      router.push("/chat");
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiError ? describeVerifyError(err) : "Verification failed");

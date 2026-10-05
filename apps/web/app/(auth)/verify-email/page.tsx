@@ -6,6 +6,6 @@ export const dynamic = "force-dynamic";
 
 export default async function VerifyEmailPage() {
   const user = await requireUser();
-  if (user.emailVerified) redirect("/recipes");
+  if (user.emailVerified) redirect("/chat");
   return <VerifyEmailForm email={user.email} />;
 }
