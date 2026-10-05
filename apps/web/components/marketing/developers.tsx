@@ -53,12 +53,14 @@ export function Developers({ signedIn }: { signedIn: boolean }) {
               </li>
             ))}
           </ul>
-          <Link
-            href={signedIn ? "/api-keys" : "/signup"}
-            className={`${buttonVariants()} mt-8`}
-          >
-            {signedIn ? "Manage API keys" : "Get an API key"}
-          </Link>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href={signedIn ? "/api-keys" : "/signup"} className={buttonVariants()}>
+              {signedIn ? "Manage API keys" : "Get an API key"}
+            </Link>
+            <Link href="/docs" className={buttonVariants({ variant: "outline" })}>
+              Read the docs
+            </Link>
+          </div>
         </div>
         <div className="min-w-0 space-y-4">
           <CodeBlock code={CURL_EXAMPLE} />

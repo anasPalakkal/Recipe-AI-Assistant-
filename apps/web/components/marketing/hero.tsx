@@ -18,8 +18,8 @@ export function Hero({ signedIn }: { signedIn: boolean }) {
           <Link href={signedIn ? "/chat" : "/signup"} className={buttonVariants({ size: "lg" })}>
             {signedIn ? "Open app" : "Get started"}
           </Link>
-          <Link href="#developers" className={buttonVariants({ variant: "outline", size: "lg" })}>
-            View the API
+          <Link href="/docs" className={buttonVariants({ variant: "outline", size: "lg" })}>
+            View the API docs
           </Link>
         </div>
       </div>

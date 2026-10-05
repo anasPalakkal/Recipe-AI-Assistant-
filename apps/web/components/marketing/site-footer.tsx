@@ -3,9 +3,10 @@ import { Logo } from "@/components/brand/logo";
 import { APP_NAME } from "@/lib/brand";
 
 const FOOTER_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#workflow", label: "workflow" },
-  { href: "#developers", label: "API" },
+  { href: "/#features", label: "Features" },
+  { href: "/#workflow", label: "Workflow" },
+  { href: "/#developers", label: "API" },
+  { href: "/docs", label: "Docs" },
   { href: "/login", label: "Log in" },
   { href: "/signup", label: "Sign up" },
 ];

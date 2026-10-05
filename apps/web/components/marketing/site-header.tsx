@@ -5,9 +5,10 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getOptionalUser } from "@/lib/session";
 
 const NAV_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#workflow", label: "Workflow" },
-  { href: "#developers", label: "API" },
+  { href: "/#features", label: "Features" },
+  { href: "/#workflow", label: "Workflow" },
+  { href: "/#developers", label: "API" },
+  { href: "/docs", label: "Docs" },
 ];
 
 export async function SiteHeader() {
