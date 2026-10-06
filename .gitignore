@@ -7,3 +7,7 @@ dist/
 .DS_Store
 coverage/
 prisma/*.db
+
+scripts/demo-video/output/
+scripts/demo-video/.auth/
+.env.demo
