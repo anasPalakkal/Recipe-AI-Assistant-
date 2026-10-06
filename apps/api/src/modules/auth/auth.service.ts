@@ -4,7 +4,7 @@ import { verifyGoogleIdToken } from "./google.provider.js";
 import { normalizeEmail } from "../../lib/email.js";
 import * as otpService from "./otp.service.js";
 import { revokeAllSessions } from "../../plugins/session.plugin.js";
-import { ConflictError, UnauthorizedError, NotFoundError } from "../../lib/errors.js";
+import { ConflictError, UnauthorizedError, } from "../../lib/errors.js";
 import type { SignupInput, LoginInput, UpdateProfileInput } from "@recipeai/shared";
 
 export async function signup(input: SignupInput) {
@@ -115,18 +115,22 @@ export async function loginWithGoogle(idToken: string) {
   });
 }
 
-export async function getUserById(id: string) {
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, name: true, emailVerifiedAt: true },
-  });
-  if (!user) throw new NotFoundError("User not found");
+// A live session whose user row is gone is a dead session, not a 404.
+async function findSessionUser(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    await revokeAllSessions(userId);
+    throw new UnauthorizedError("Session expired");
+  }
   return user;
 }
 
+export async function getUserById(id: string) {
+  return findSessionUser(id);
+}
+
 export async function verifyEmail(userId: string, code: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new NotFoundError("User not found");
+  const user = await findSessionUser(userId);
 
   if (user.emailVerifiedAt) {
     return user;
@@ -138,8 +142,7 @@ export async function verifyEmail(userId: string, code: string) {
 }
 
 export async function resendVerificationCode(userId: string): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new NotFoundError("User not found");
+  const user = await findSessionUser(userId);
 
   if (user.emailVerifiedAt) {
     throw new ConflictError("Email is already verified");
@@ -149,8 +152,6 @@ export async function resendVerificationCode(userId: string): Promise<void> {
 }
 
 export async function updateProfile(userId: string, input: UpdateProfileInput) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new NotFoundError("User not found");
-
+  await findSessionUser(userId);
   return prisma.user.update({ where: { id: userId }, data: { name: input.name } });
 }
