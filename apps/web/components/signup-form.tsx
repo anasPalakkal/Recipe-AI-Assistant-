@@ -35,7 +35,7 @@ export function SignupForm() {
       await signup(parsed.data);
       // Session is created immediately on signup, before email verification.
       // Verification is enforced per-endpoint on the backend, not gated here.
-      router.push("/recipes");
+      router.push("/verify-email");
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Signup failed");
@@ -85,12 +85,24 @@ export function SignupForm() {
             {isSubmitting ? "Creating account..." : "Sign up"}
           </Button>
         </form>
-
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}
           <Link href="/login" className="font-medium text-foreground hover:text-primary">
             Log in
           </Link>
+        </p>
+
+        <p className="text-center text-xs text-muted-foreground">
+          By continuing, you confirm you are 18 or older and agree to the{" "}
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            Privacy Policy
+          </Link>
+          .
         </p>
       </CardContent>
     </Card>
