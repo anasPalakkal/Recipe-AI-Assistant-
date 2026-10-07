@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/brand";
 import { MediaFrame } from "./media-frame";
+import { DemoVideo } from "./demo-video";
 
 export function Hero({ signedIn }: { signedIn: boolean }) {
   return (
@@ -25,7 +26,13 @@ export function Hero({ signedIn }: { signedIn: boolean }) {
       </div>
 
       <div className="mx-auto mt-14 max-w-4xl">
-        <MediaFrame label="Demo video placeholder: typing a prompt and watching the recipe generate" />
+        <MediaFrame label={`Screen recording of ${APP_NAME} generating a recipe`}>
+          <DemoVideo
+            src="/videos/cookloom-demo.mp4"
+            poster="/videos/cookloom-demo-poster.jpg"
+            label={`Screen recording of ${APP_NAME} generating a recipe from a typed prompt`}
+          />
+        </MediaFrame>
       </div>
     </section>
   );
