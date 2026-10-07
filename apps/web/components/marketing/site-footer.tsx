@@ -7,6 +7,7 @@ const FOOTER_LINKS = [
   { href: "/#workflow", label: "Workflow" },
   { href: "/#developers", label: "API" },
   { href: "/docs", label: "Docs" },
+  { href: "/privacy", label: "Privacy" },
   { href: "/login", label: "Log in" },
   { href: "/signup", label: "Sign up" },
 ];
