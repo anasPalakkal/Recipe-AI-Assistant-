@@ -33,7 +33,7 @@ export function LoginForm() {
     setIsSubmitting(true);
     try {
       await login(parsed.data);
-      router.push("/recipes");
+      router.push("/chat");
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");

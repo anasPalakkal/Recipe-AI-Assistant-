@@ -35,7 +35,7 @@ export function GoogleSignInButton({ label, onError }: GoogleSignInButtonProps) 
       setIsPending(true);
       try {
         await signInWithGoogle(response.credential);
-        router.push("/recipes");
+        router.push("/chat");
         router.refresh();
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Google sign-in failed";
