@@ -197,8 +197,8 @@ application depends only on the `AiProvider` interface
 (`generateRecipe`, `generateRecipeStream`). Swapping providers later
 means writing a new class, not touching call sites.
 
-Locked to `gemini-3.6-flash` with `thinkingConfig: { thinkingLevel: "low" }`
-— `gemini-2.5-flash` is unavailable on this account.
+Model is set by `GEMINI_MODEL` (default `gemini-3.6-flash`) with `thinkingConfig: { thinkingLevel: "low" }`
+`gemini-2.5-flash` is unavailable on this account.
 
 ### Hardening: timeout, retry, cost cap
 
@@ -211,6 +211,7 @@ Added after review found Phase 3's own stated scope
   `429/500/502/503/504`, only ever before any response has been read —
   never mid-stream, never on an intentional abort.
 - `maxOutputTokens: 4096` as a hard ceiling on generation cost per call.
+- Daily-quota 429s `(AI_QUOTA_EXHAUSTED, 503)` fail immediately instead of being retried.
 
 This was done deliberately *before* Phase 6, so the public API inherits
 whatever robustness already exists in the generation pipeline rather
@@ -228,8 +229,7 @@ Cloudflare AI Gateway. `GeminiProvider.generateRecipe`/
 or bugs can degrade the other. A retry storm or traffic spike from a
 public API integrator would otherwise throttle or exhaust quota shared
 with the internal app's own recipe generation feature — someone else's
-incident becomes your outage. Separate keys give independent upstream
-quotas even behind a shared gateway. This is a config-level isolation,
+incident becomes your outage. Separate keys give independent upstream quotas only when they belong to different Google projects, because Gemini quotas are enforced per project and per model, not per key. Two keys in one project share one quota. This is a config-level isolation,
 not an architectural rewrite, and was treated as a pre-launch
 requirement once real external traffic was in scope, not a nice-to-have.
 

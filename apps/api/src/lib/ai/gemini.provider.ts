@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { aiResponseSchema, imageAnalysisResponseSchema } from "@recipeai/shared";
-import { UpstreamServiceError } from "../errors.js";
+import { UpstreamServiceError, AiQuotaExhaustedError } from "../errors.js";
 import { env } from "../../config/env.js";
 import type { AiProvider, ChatTurn, ConsumerType, AiGenerationResult, ImageAnalysisResult } from "./types.js";
-
-const MODEL = "gemini-3.6-flash";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const STREAM_TIMEOUT_MS = 60_000;
@@ -244,6 +242,14 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// A daily quota resets in hours, so retrying only burns more requests.
+// Per-minute 429s are still retried.
+async function isDailyQuotaExhausted(response: Response): Promise<boolean> {
+    if (response.status !== 429) return false;
+    const body = await response.clone().text();
+    return body.includes("PerDay");
+}
+
 function createTimeoutController(timeoutMs: number, externalSignal?: AbortSignal) {
     const controller = new AbortController();
     let timedOut = false;
@@ -279,11 +285,15 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
 
         try {
             const response = await fetch(url, options);
+            if (await isDailyQuotaExhausted(response)) {
+                throw new AiQuotaExhaustedError();
+            }
             if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
                 return response;
             }
             lastError = new UpstreamServiceError(`AI provider returned status ${response.status}`);
         } catch (err) {
+            if (err instanceof AiQuotaExhaustedError) throw err;
             if (err instanceof Error && err.name === "AbortError") throw err;
             lastError = err;
         }
@@ -318,6 +328,9 @@ async function fetchNonStreamingWithRetry(
         }
 
         if (response) {
+            if (await isDailyQuotaExhausted(response)) {
+                throw new AiQuotaExhaustedError();
+            }
             if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
                 return response;
             }
@@ -352,7 +365,7 @@ async function requestFromGemini<T>(
     consumerType: ConsumerType,
     schema: z.ZodType<T>,
 ): Promise<{ response: T; raw: unknown }> {
-    const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:generateContent`;
+    const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${env.GEMINI_MODEL}:generateContent`;
 
     const response = await fetchNonStreamingWithRetry(url, (signal) => ({
         method: "POST",
@@ -430,7 +443,7 @@ export class GeminiProvider implements AiProvider {
         consumerType: ConsumerType,
         signal?: AbortSignal,
     ): AsyncGenerator<string> {
-        const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${MODEL}:streamGenerateContent?alt=sse`;
+        const url = `${env.AI_GATEWAY_BASE_URL}/google-ai-studio/v1/models/${env.GEMINI_MODEL}:streamGenerateContent?alt=sse`;
         const timeout = createTimeoutController(STREAM_TIMEOUT_MS, signal);
 
         let response: Response;
@@ -444,7 +457,11 @@ export class GeminiProvider implements AiProvider {
                 body: buildRequestBody(prompt),
                 signal: timeout.signal,
             });
-        } catch {
+        } catch (err) {
+            if (err instanceof AiQuotaExhaustedError) {
+                timeout.cleanup();
+                throw err;
+            }
             if (timeout.didTimeout()) throw new UpstreamServiceError("AI provider request timed out");
             if (signal?.aborted) {
                 timeout.cleanup();

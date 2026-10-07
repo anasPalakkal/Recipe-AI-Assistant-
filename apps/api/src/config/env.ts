@@ -15,6 +15,7 @@ const envSchema = z.object({
   AI_GATEWAY_BASE_URL: z.string().url(),
   GEMINI_API_KEY: z.string().min(1),
   GEMINI_API_KEY_PUBLIC: z.string().min(1),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.6-flash"),
 
   BREVO_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().email(),
