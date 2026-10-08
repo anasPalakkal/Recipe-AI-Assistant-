@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 
 export const redis = new Redis(env.REDIS_URL, {
   maxRetriesPerRequest: 3,
+  connectTimeout: 10_000,
 });
 
 redis.on("error", (err: Error) => {
