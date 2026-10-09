@@ -23,7 +23,7 @@ const RESPONSE_EXAMPLE = `{
 const POINTS = [
   "Per-key rate limits and monthly quotas, reported in headers on every response",
   "Safe retries with an Idempotency-Key header",
-  "Up to 5 active keys, so you can rotate without downtime",
+  "Up to 3 active keys, so you can rotate without downtime",
   "A dashboard with daily usage for each key",
 ];
 
