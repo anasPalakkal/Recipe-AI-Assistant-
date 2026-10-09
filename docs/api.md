@@ -46,7 +46,7 @@ Create and delete keys on the API keys page of the web app. The page also shows 
 - The raw key is shown **once**, when you create it, and cannot be retrieved again. If you lose it, delete it and create a new one.
 - You can hold up to 3 active keys, so you can rotate without downtime: create the new key, roll it out, then delete the old one.
 - Deleting a key takes effect immediately, and further requests with it return `401`.
-- Rate limit and monthly quota are set per key and cannot currently be changed from the dashboard.
+- Rate limit, daily limit and monthly quota are set per key and cannot currently be changed from the dashboard.
 
 ## Generate a recipe
 
@@ -94,16 +94,17 @@ Generates a recipe from a prompt. The recipe is returned only. Nothing is saved.
 - A food question that is not a recipe request (for example, "how much protein is in 100g of chicken") returns `422 FOOD_INFO_NOT_RECIPE`. The answer is included in `details.answer`, so you can show it instead of treating it as a dead end.
 - A prompt that tries to bypass or redefine the assistant's scope returns `422 UNSAFE_OR_UNCLEAR`.
 
-These `422` responses still count against your monthly quota, because the request reached generation.
+These `422` responses still count against your daily limit and monthly quota, because the request reached generation.
 
 ## Rate limits and quota
 
-Two independent limits apply to each API key:
+Three independent limits apply to each API key:
 
 | Limit | Default | Window |
 |---|---|---|
-| Requests per minute | 20 | Fixed 60-second window |
-| Requests per month | 300 | Calendar month, resets on the 1st at 00:00 UTC |
+| Requests per minute | 5 | Fixed 60-second window |
+| Requests per day | 3 | UTC day, resets at 00:00 UTC |
+| Requests per month | 30 | Calendar month, resets on the 1st at 00:00 UTC |
 
 Your key's actual values may differ. Read them from the response headers or the dashboard.
 
@@ -114,6 +115,9 @@ Sent on every response after authentication, including rejections, so a client c
 | Header | Meaning |
 |---|---|
 | `X-RateLimit-Limit` | Requests allowed per minute for this key |
+| `X-Daily-Limit` | Requests allowed per day for this key |
+| `X-Daily-Remaining` | Requests left today |
+| `X-Daily-Reset` | Unix time (seconds) when the daily limit resets: 00:00 UTC |
 | `X-RateLimit-Remaining` | Requests left in the current window |
 | `X-RateLimit-Reset` | Unix time (seconds) when the current window resets |
 | `X-Quota-Limit` | Requests allowed per month for this key |
@@ -121,17 +125,18 @@ Sent on every response after authentication, including rejections, so a client c
 | `X-Quota-Reset` | Unix time (seconds) when the quota resets: the start of next month, UTC |
 | `Retry-After` | Seconds to wait. Sent only with `RATE_LIMITED`. |
 
-`X-Quota-*` headers are absent on responses rejected by the rate limiter, because the quota check is never reached. They are also absent on `400` and `401` responses and on idempotent replays.
+`X-Daily-*` headers are absent on responses rejected by the rate limiter, and `X-Quota-*` headers are absent on responses rejected by the rate limiter or the daily limit, because those checks are never reached. Both are also absent on `400` and `401` responses and on idempotent replays.
 
 ### What counts against your limits
 
-Checks run in this order: authentication, validation, rate limit, quota, generation.
+Checks run in this order: authentication, validation, rate limit, daily limit, quota, generation.
 
 | Outcome | Consumes rate limit | Consumes quota |
 |---|---|---|
 | `400` validation error | No | No |
 | `429 RATE_LIMITED` | Yes | No |
 | `429 QUOTA_EXCEEDED` | Yes | Already over the limit |
+| `429 DAILY_LIMIT_EXCEEDED` | Yes | No |
 | Reaches generation and succeeds | Yes | Yes |
 | Reaches generation and fails (`422`, `502`) | Yes | Yes |
 
@@ -145,15 +150,15 @@ The quota is charged before generation starts, so a client that disconnects mid-
 
 Includes `Retry-After: 60`. Back off and retry.
 
-### `429 QUOTA_EXCEEDED`
+### `429 DAILY_LIMIT_EXCEEDED`
 
 ```json
-{ "error": { "code": "QUOTA_EXCEEDED", "message": "Monthly quota exceeded." } }
+{ "error": { "code": "DAILY_LIMIT_EXCEEDED", "message": "Daily limit exceeded. Resets at 00:00 UTC." } }
 ```
 
-No `Retry-After` is sent. Retrying will not succeed until the quota resets (see `X-Quota-Reset`).
+No `Retry-After` is sent. Retrying will not succeed until the daily limit resets (see `X-Daily-Reset`).
 
-Handle the two `429` cases differently, using `error.code`: retry shortly for `RATE_LIMITED`, and stop for `QUOTA_EXCEEDED`.
+Handle the three `429` cases differently, using `error.code`: retry shortly for `RATE_LIMITED`, and stop until the reset time for `DAILY_LIMIT_EXCEEDED` and `QUOTA_EXCEEDED`.
 
 ## Idempotency
 
@@ -194,5 +199,7 @@ All errors use this shape (`details` is omitted when not applicable):
 | 422 | `UNSAFE_OR_UNCLEAR` | Prompt tried to bypass or redefine the assistant's scope |
 | 429 | `RATE_LIMITED` | Too many requests per minute. Respect `Retry-After`. |
 | 429 | `QUOTA_EXCEEDED` | Monthly quota used up. Resets on the 1st, UTC. |
+| 429 | `DAILY_LIMIT_EXCEEDED` | Daily limit used up. Resets at 00:00 UTC. |
+| 503 | `AI_QUOTA_EXHAUSTED` | The AI provider's daily capacity is used up. Try again later. |
 | 500 | `INTERNAL_ERROR` | Unexpected server error |
 | 502 | `UPSTREAM_SERVICE_ERROR` | The generation provider failed, or usage tracking was temporarily unavailable. Safe to retry. |

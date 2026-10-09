@@ -211,7 +211,9 @@ Added after review found Phase 3's own stated scope
   `429/500/502/503/504`, only ever before any response has been read —
   never mid-stream, never on an intentional abort.
 - `maxOutputTokens: 4096` as a hard ceiling on generation cost per call.
-- Daily-quota 429s `(AI_QUOTA_EXHAUSTED, 503)` fail immediately instead of being retried.
+- Daily-quota 429s (`AI_QUOTA_EXHAUSTED`, 503) fail immediately instead of
+  being retried. The message tells users capacity is used up and when it
+  resets, rather than exposing provider details.
 
 This was done deliberately *before* Phase 6, so the public API inherits
 whatever robustness already exists in the generation pipeline rather
@@ -307,7 +309,9 @@ window where zero valid key exists.
 
 `rateLimitPerMinute` and `monthlyQuota` are fields on `ApiKey` itself,
 not global constants — each key's limits can be tuned individually
-(e.g. a higher-tier customer) without a code deploy.
+(e.g. a higher-tier customer) without a code deploy. Defaults are
+deliberately low (5 per minute, 30 per month) because the deployment
+runs on a free AI tier with a hard daily cap.
 
 ### Atomic throttle and quota — the same pattern, twice, deliberately
 
@@ -341,6 +345,37 @@ to solve a problem with no real stakes at this stage (no billing yet).
 Chosen deliberately, documented plainly in the public API docs rather
 than left implicit.
 
+### Daily limits: protecting a shared upstream cap
+
+The free Gemini tier allows 20 requests per day per model per project,
+shared by every user. Per-key and per-minute limits do not protect
+that pool: one key could spend its whole monthly quota in a day. Two
+daily counters sit in front of generation instead:
+
+- **Internal chat:** `CHAT_DAILY_LIMIT` (default 5) per user, counting
+  text sends, regenerates and photo analyses. Photo analysis also keeps
+  its own, smaller daily limit.
+- **Public API:** `PUBLIC_API_DAILY_LIMIT` (default 3) per API key,
+  checked after the per-minute throttle and before the monthly quota,
+  so a daily rejection never burns monthly quota.
+
+Both use the same INCR-first Redis pattern as the quota
+(`lib/daily-limit.ts`), reset at 00:00 UTC, and fail closed on Redis
+errors for the same reason the quota does. The limits are environment
+variables rather than `ApiKey` columns because they are expected to
+change the day billing is enabled, and a schema change per tuning is
+the wrong cost.
+
+The chat counter is rolled back if the request fails on our side or
+upstream, so a failure doesn't cost the user a message. The public
+counter is not rolled back, consistent with the quota's
+count-every-attempt policy above.
+
+**Not built, on purpose:** a global counter mirroring Gemini's own
+limit. It would only save one failed upstream call, since
+`AI_QUOTA_EXHAUSTED` already fails after a single attempt, and it adds a
+number that must be kept in sync with the provider's.
+
 ### Redis failure policy: throttle fails open, quota fails closed
 
 Both failures are logged at `error` level, but they are handled
@@ -360,14 +395,16 @@ differently because their failure costs differ:
 
 The vision (photo analysis) daily limit follows the same fail-closed
 policy for the same reason.
+The daily counters follow the quota's fail-closed policy.
 
 ### Distinguishing the error responses
 
-`RATE_LIMITED` (throttle) and `QUOTA_EXCEEDED` (quota) are different
-`error.code` values, both HTTP 429, so a client can handle them
-differently. Only `RATE_LIMITED` carries a `Retry-After` header — a
-`Retry-After` on a monthly quota rejection would be misleading, since
-the real reset is a calendar boundary, not a short delay.
+`RATE_LIMITED` (throttle), `DAILY_LIMIT_EXCEEDED` (daily limit) and
+`QUOTA_EXCEEDED` (monthly quota) are different `error.code` values, all
+HTTP 429, so a client can handle them differently. Only `RATE_LIMITED`
+carries a `Retry-After` header — a `Retry-After` on a daily or monthly
+rejection would be misleading, since the real reset is a calendar
+boundary, not a short delay.
 
 Upstream AI failures are separate again: `AI_QUOTA_EXHAUSTED` (503)
 means the provider's own daily quota is spent, which is the service's
@@ -377,7 +414,7 @@ cached for idempotent replay like any other `AppError`.
 
 ### Rate limit / quota response headers
 
-`X-RateLimit-Limit` / `-Remaining` / `-Reset` and `X-Quota-Limit` /
+`X-RateLimit-Limit` / `X-Daily-Limit` / `-Remaining` / `-Reset` and `X-Quota-Limit` /
 `-Remaining` / `-Reset` are set on every response from
 `/v1/recipes/generate` that gets past authentication and body
 validation — success or rejection. They let a well-behaved client
@@ -413,7 +450,7 @@ and revoked keys all produce an identical `401` — distinguishing them
 would let a caller probe whether a specific key string was ever valid.
 
 The order of authentication, idempotency lookup, validation, throttle,
-quota and generation is covered by tests
+ daily limit, quota and generation is covered by tests
 (`modules/public-api/recipe.routes.test.ts`), so a refactor cannot
 silently reorder it.
 
@@ -454,6 +491,13 @@ routes, where this ordering issue doesn't apply.
 - **`UsageRecord` has no `userId` column**, only `apiKeyId` — reachable
   via the relation. Denormalizing would only help a query pattern that
   doesn't exist yet; adding it now would be speculative.
+- **Fallback model** — not built. The account has free quota for only one
+  usable model, so there is nothing to fall back to; transient
+  "high demand" 503s are covered by retries. Revisit if billing is
+  enabled.
+- **Payments** — deferred. Plans would map to the per-key limits already
+  stored on `ApiKey`, with a hosted checkout and signature-verified,
+  idempotent webhooks as the source of truth.
 
 ---
 
