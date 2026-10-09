@@ -21,6 +21,7 @@ vi.mock("../../lib/idempotency.js", () => ({
   cacheResponse: vi.fn(),
 }));
 vi.mock("../recipes/recipe.service.js", () => ({ generateRecipeDraft: vi.fn() }));
+vi.mock("../../lib/daily-limit.js", () => ({ checkAndIncrementDaily: vi.fn() }));
 
 import publicRecipeRoutes from "./recipe.routes.js";
 import { prisma } from "../../lib/prisma.js";
@@ -29,6 +30,7 @@ import { checkAndIncrementQuota } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
 import * as recipeService from "../recipes/recipe.service.js";
 import { UnprocessableEntityError } from "../../lib/errors.js";
+import { checkAndIncrementDaily } from "../../lib/daily-limit.js";
 
 const throttle = vi.mocked(checkAndIncrementThrottle);
 const quota = vi.mocked(checkAndIncrementQuota);
@@ -40,6 +42,8 @@ const createUsage = vi.mocked(prisma.usageRecord.create);
 const allowedThrottle = { allowed: true, limit: 20, count: 1, resetAt: 1_800_000_000 } as never;
 const allowedQuota = { allowed: true, limit: 300, used: 1, resetAt: 1_800_000_000 } as never;
 const draft = { recipe: { title: "Pasta" }, image: null } as never;
+const daily = vi.mocked(checkAndIncrementDaily);
+const allowedDaily = { allowed: true, limit: 3, used: 1, resetAt: 1_800_000_000 } as never;
 
 async function buildTestApp() {
   const app = Fastify();
@@ -69,6 +73,7 @@ beforeEach(() => {
   quota.mockResolvedValue(allowedQuota);
   generate.mockResolvedValue(draft);
   createUsage.mockResolvedValue({} as never);
+  daily.mockResolvedValue(allowedDaily);
 });
 
 describe("POST /v1/recipes/generate", () => {
@@ -175,5 +180,27 @@ describe("POST /v1/recipes/generate", () => {
 
     expect(response.statusCode).toBe(500);
     expect(cache).not.toHaveBeenCalled();
+  });
+
+    it("checks the daily limit after throttle and before quota", async () => {
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(throttle.mock.invocationCallOrder[0]).toBeLessThan(daily.mock.invocationCallOrder[0]!);
+    expect(daily.mock.invocationCallOrder[0]).toBeLessThan(quota.mock.invocationCallOrder[0]!);
+  });
+
+  it("returns DAILY_LIMIT_EXCEEDED without consuming monthly quota or generating", async () => {
+    daily.mockResolvedValue({ ...(allowedDaily as object), allowed: false, used: 4 } as never);
+    const app = await buildTestApp();
+
+    const response = await post(app);
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error.code).toBe("DAILY_LIMIT_EXCEEDED");
+    expect(response.headers["retry-after"]).toBeUndefined();
+    expect(quota).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
   });
 }); 

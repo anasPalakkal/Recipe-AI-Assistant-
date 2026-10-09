@@ -116,15 +116,23 @@ export async function getDashboard(userId: string): Promise<DashboardResponse> {
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
   const [requestsThisMonth, rateLimitedLast30Days, recentRecords] = await Promise.all([
-    // Rate-limited requests are rejected before the quota counter is
-    // incremented, so they are excluded to keep this number comparable
-    // to monthlyQuotaTotal. The OR is required: SQL "<>" never matches
-    // NULL, so a bare `not` filter would drop every successful request.
+    // Rate-limited and daily-limited requests are rejected before the
+    // quota counter is incremented, so they are excluded to keep this
+    // number comparable to monthlyQuotaTotal. The OR is required: SQL
+    // "<>" never matches NULL, so a bare `notIn` filter would drop every
+    // successful request.
     prisma.usageRecord.count({
       where: {
         apiKeyId: { in: activeKeyIds },
         createdAt: { gte: monthStart },
-        OR: [{ errorCode: null }, { errorCode: { not: USAGE_ERROR_CODE.RATE_LIMITED } }],
+        OR: [
+          { errorCode: null },
+          {
+            errorCode: {
+              notIn: [USAGE_ERROR_CODE.RATE_LIMITED, USAGE_ERROR_CODE.DAILY_LIMIT_EXCEEDED],
+            },
+          },
+        ],
       },
     }),
     prisma.usageRecord.count({

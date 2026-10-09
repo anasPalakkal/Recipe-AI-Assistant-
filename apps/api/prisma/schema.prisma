@@ -135,8 +135,8 @@ model ApiKey {
   // SHA-256 hash of the full raw key. The raw key itself is never stored
   // and is shown to the user exactly once, at creation.
   keyHash            String    @unique
-  rateLimitPerMinute Int       @default(20)
-  monthlyQuota       Int       @default(300)
+  rateLimitPerMinute Int       @default(5)
+  monthlyQuota       Int       @default(30)
   lastUsedAt         DateTime?
   revokedAt          DateTime?
   createdAt          DateTime  @default(now())

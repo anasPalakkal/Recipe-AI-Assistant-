@@ -7,6 +7,8 @@ import { checkAndIncrementThrottle, type ThrottleCheckResult } from "../../lib/t
 import { checkAndIncrementQuota, type QuotaCheckResult } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
 import { USAGE_ERROR_CODE } from "../../lib/usage-error-codes.js";
+import { env } from "../../config/env.js";
+import { checkAndIncrementDaily, type DailyLimitResult } from "../../lib/daily-limit.js";
 import {
   AppError,
   TooManyRequestsError,
@@ -15,8 +17,8 @@ import {
 } from "../../lib/errors.js";
 
 const ENDPOINT = "POST /v1/recipes/generate";
-const DEFAULT_RATE_LIMIT_PER_MINUTE = 20;
-const DEFAULT_MONTHLY_QUOTA = 300;
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 5;
+const DEFAULT_MONTHLY_QUOTA = 30;
 
 async function logUsage(
   apiKeyId: string,
@@ -49,6 +51,12 @@ function setQuotaHeaders(reply: FastifyReply, quota: QuotaCheckResult): void {
   reply.header("X-Quota-Reset", String(quota.resetAt));
 }
 
+function setDailyHeaders(reply: FastifyReply, daily: DailyLimitResult): void {
+  reply.header("X-Daily-Limit", String(daily.limit));
+  reply.header("X-Daily-Remaining", String(Math.max(daily.limit - daily.used, 0)));
+  reply.header("X-Daily-Reset", String(daily.resetAt));
+}
+
 export default async function publicRecipeRoutes(app: FastifyInstance) {
   app.addHook("preHandler", apiKeyAuth);
 
@@ -79,6 +87,18 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     if (!throttle.allowed) {
       const err = new TooManyRequestsError("Rate limit exceeded. Try again shortly.", USAGE_ERROR_CODE.RATE_LIMITED, 60);
       reply.header("Retry-After", "60");
+      await logUsage(apiKeyId, err.statusCode, err.code, request.log);
+      return reply.status(err.statusCode).send(formatAppErrorBody(err));
+    }
+
+
+    const daily = await checkAndIncrementDaily("public", apiKeyId, env.PUBLIC_API_DAILY_LIMIT, request.log);
+    setDailyHeaders(reply, daily);
+
+    if (!daily.allowed) {
+      const err = daily.redisUnavailable
+        ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
+        : new TooManyRequestsError("Daily limit exceeded. Resets at 00:00 UTC.", USAGE_ERROR_CODE.DAILY_LIMIT_EXCEEDED);
       await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
     }
