@@ -45,7 +45,7 @@ async function dispatchMessage(request: FastifyRequest, conversationId: string |
     }
 
     const { prompt } = sendMessageSchema.parse(request.body);
-    return chatService.sendMessage(request.userId!, conversationId, prompt);
+    return chatService.sendMessage(request.userId!, conversationId, prompt, request.log);
 }
 
 export default async function chatRoutes(app: FastifyInstance) {
@@ -101,7 +101,7 @@ export default async function chatRoutes(app: FastifyInstance) {
         { config: { rateLimit: CHAT_RATE_LIMIT } },
         async (request, reply) => {
             const { conversationId, messageId } = messageIdParamSchema.parse(request.params);
-            const message = await chatService.regenerateMessage(request.userId!, conversationId, messageId);
+            const message = await chatService.regenerateMessage(request.userId!, conversationId, messageId, request.log);
             return reply.send(message);
         },
     );

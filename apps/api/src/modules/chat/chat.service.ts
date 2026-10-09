@@ -11,6 +11,8 @@ import { prisma } from "../../lib/prisma.js";
 import { NotFoundError, ConflictError, UnprocessableEntityError, TooManyRequestsError, UpstreamServiceError } from "../../lib/errors.js";
 import * as recipeService from "../recipes/recipe.service.js";
 import type { AiResponse, ImageAnalysisResponse, UpdateConversationInput } from "@recipeai/shared";
+import { env } from "../../config/env.js";
+import { checkAndIncrementDaily, rollbackDaily } from "../../lib/daily-limit.js";
 
 const REFUSAL_MESSAGES: Record<"out_of_scope" | "unsafe_or_unclear", string> = {
   out_of_scope:
@@ -22,6 +24,38 @@ const REFUSAL_MESSAGES: Record<"out_of_scope" | "unsafe_or_unclear", string> = {
 // Provisional - not derived from actual Gemini vision pricing or observed
 // usage yet. See Phase 9 backlog: revisit once real usage data exists.
 const VISION_DAILY_LIMIT = 5;
+
+const CHAT_DAILY_SCOPE = "chat";
+
+async function consumeChatDailyLimit(userId: string, logger: FastifyBaseLogger): Promise<void> {
+  const result = await checkAndIncrementDaily(CHAT_DAILY_SCOPE, userId, env.CHAT_DAILY_LIMIT, logger);
+  if (result.allowed) return;
+
+  if (result.redisUnavailable) {
+    throw new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.");
+  }
+  throw new TooManyRequestsError(
+    "You've reached today's message limit. It resets daily at 5:30 AM IST.",
+    "CHAT_DAILY_LIMIT_REACHED",
+    Math.max(result.resetAt - Math.floor(Date.now() / 1000), 1),
+  );
+}
+
+// A request that fails on our side or upstream does not cost the user
+// one of their daily messages.
+async function withChatDailyLimit<T>(
+  userId: string,
+  logger: FastifyBaseLogger,
+  work: () => Promise<T>,
+): Promise<T> {
+  await consumeChatDailyLimit(userId, logger);
+  try {
+    return await work();
+  } catch (err) {
+    await rollbackDaily(CHAT_DAILY_SCOPE, userId, logger);
+    throw err;
+  }
+}
 
 const MAX_TITLE_LENGTH = 60;
 
@@ -259,7 +293,7 @@ async function persistExchange(params: PersistExchangeParams) {
   });
 }
 
-export async function sendMessage(userId: string, conversationId: string | null, prompt: string) {
+export async function sendMessage(userId: string, conversationId: string | null, prompt: string, logger: FastifyBaseLogger,) {
   const existing = conversationId ? await getOwnedConversation(userId, conversationId) : null;
   const sentAt = new Date();
 
@@ -271,7 +305,9 @@ export async function sendMessage(userId: string, conversationId: string | null,
     : [];
 
   const history = [...toChatTurns(priorMessages), { role: "user" as const, content: prompt }];
-  const response = await generateAndLog(userId, prompt, history);
+  const response = await withChatDailyLimit(userId, logger, () =>
+    generateAndLog(userId, prompt, history),
+  );
   const assistantData = await toAssistantMessageData(response);
 
   const exchange = await persistExchange({
@@ -304,47 +340,48 @@ export async function sendImageMessage(
 
   const { base64, mimeType } = await validateAndProcessImage(rawBuffer);
 
-  const quota = await checkAndIncrementVisionQuota(userId, VISION_DAILY_LIMIT, logger);
-  if (!quota.allowed) {
-    if (quota.redisUnavailable) {
-      throw new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.");
+  const { analysisResponse, userImageKey } = await withChatDailyLimit(userId, logger, async () => {
+    const quota = await checkAndIncrementVisionQuota(userId, VISION_DAILY_LIMIT, logger);
+    if (!quota.allowed) {
+      if (quota.redisUnavailable) {
+        throw new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.");
+      }
+      throw new TooManyRequestsError("Daily image analysis limit reached. Try again tomorrow.", "VISION_QUOTA_EXCEEDED");
     }
-    throw new TooManyRequestsError("Daily image analysis limit reached. Try again tomorrow.", "VISION_QUOTA_EXCEEDED");
-  }
 
-  // validateAndProcessImage already re-encoded to JPEG - upload that same
-  // processed buffer, not the raw upload, so the stored copy matches what
-  // was actually analyzed and has already had EXIF/GPS stripped.
-  const processedBuffer = Buffer.from(base64, "base64");
-  let userImageKey: string;
-  try {
-    userImageKey = await uploadUserImage(userId, processedBuffer);
-  } catch (err) {
-    // Never reached Gemini - doesn't count against the daily allowance.
-    await rollbackVisionQuota(userId, logger);
-    logger.error({ err, userId }, "failed to upload user image to Cloudinary");
-    throw new UpstreamServiceError("Failed to store the uploaded image. Please try again.");
-  }
+    // validateAndProcessImage already re-encoded to JPEG - upload that same
+    // processed buffer, not the raw upload, so the stored copy matches what
+    // was actually analyzed and has already had EXIF/GPS stripped.
+    const processedBuffer = Buffer.from(base64, "base64");
+    let uploadedKey: string;
+    try {
+      uploadedKey = await uploadUserImage(userId, processedBuffer);
+    } catch (err) {
+      // Never reached Gemini - doesn't count against the daily allowance.
+      await rollbackVisionQuota(userId, logger);
+      logger.error({ err, userId }, "failed to upload user image to Cloudinary");
+      throw new UpstreamServiceError("Failed to store the uploaded image. Please try again.");
+    }
 
-  const promptLabel = question ?? "[image analysis]";
-  let analysisResponse: ImageAnalysisResponse;
-  try {
-    const { response, raw } = await aiProvider.analyzeImage(base64, mimeType, question, "internal");
-    analysisResponse = response;
-    await prisma.aiGeneration.create({
-      data: { userId, prompt: promptLabel, rawResponse: raw as Prisma.InputJsonValue, status: GenerationStatus.SUCCESS },
-    });
-  } catch (err) {
-    await prisma.aiGeneration.create({
-      data: {
-        userId,
-        prompt: promptLabel,
-        rawResponse: { error: err instanceof Error ? err.message : "Unknown error" },
-        status: GenerationStatus.FAILED,
-      },
-    });
-    throw err;
-  }
+    const promptLabel = question ?? "[image analysis]";
+    try {
+      const { response, raw } = await aiProvider.analyzeImage(base64, mimeType, question, "internal");
+      await prisma.aiGeneration.create({
+        data: { userId, prompt: promptLabel, rawResponse: raw as Prisma.InputJsonValue, status: GenerationStatus.SUCCESS },
+      });
+      return { analysisResponse: response, userImageKey: uploadedKey };
+    } catch (err) {
+      await prisma.aiGeneration.create({
+        data: {
+          userId,
+          prompt: promptLabel,
+          rawResponse: { error: err instanceof Error ? err.message : "Unknown error" },
+          status: GenerationStatus.FAILED,
+        },
+      });
+      throw err;
+    }
+  });
 
   // A cooking question about the photographed dish gets the same treatment
   // as a text-chat recipe request. Only identification/nutrition questions
@@ -371,7 +408,12 @@ export async function sendImageMessage(
   };
 }
 
-export async function regenerateMessage(userId: string, conversationId: string, messageId: string) {
+export async function regenerateMessage(
+  userId: string,
+  conversationId: string,
+  messageId: string,
+  logger: FastifyBaseLogger,
+) {
   await getOwnedConversation(userId, conversationId);
 
   const target = await prisma.message.findFirst({
@@ -388,7 +430,9 @@ export async function regenerateMessage(userId: string, conversationId: string, 
   });
 
   const history = toChatTurns(priorMessages);
-  const response = await generateAndLog(userId, "regenerate", history);
+  const response = await withChatDailyLimit(userId, logger, () =>
+    generateAndLog(userId, "regenerate", history),
+  );
   const assistantData = await toAssistantMessageData(response);
 
   const updated = await prisma.message.update({

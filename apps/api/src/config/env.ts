@@ -17,6 +17,9 @@ const envSchema = z.object({
   GEMINI_API_KEY_PUBLIC: z.string().min(1),
   GEMINI_MODEL: z.string().min(1).default("gemini-3.6-flash"),
 
+  CHAT_DAILY_LIMIT: z.coerce.number().int().positive().default(5),
+  PUBLIC_API_DAILY_LIMIT: z.coerce.number().int().positive().default(3),
+
   BREVO_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().email(),
 

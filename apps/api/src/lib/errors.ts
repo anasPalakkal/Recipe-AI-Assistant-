@@ -69,7 +69,9 @@ export class UpstreamServiceError extends AppError {
 }
 
 export class AiQuotaExhaustedError extends AppError {
-  constructor(message = "The AI service has reached its daily limit. Please try again later.") {
+  constructor(
+    message = "We're seeing high demand and today's AI capacity has been used up. Please try again later. Capacity resets daily at 5:30 AM IST.",
+  ) {
     super(message, 503, "AI_QUOTA_EXHAUSTED");
   }
 }
