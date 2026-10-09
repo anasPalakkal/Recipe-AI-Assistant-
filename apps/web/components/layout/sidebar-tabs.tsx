@@ -7,7 +7,7 @@ import { useCloseMobileNav } from "@/components/layout/mobile-nav-context";
 
 const TABS = [
   { label: "Chat", href: "/chat", match: (p: string) => p.startsWith("/chat") || p.startsWith("/recipes") },
-  { label: "API keys", href: "/api-keys", match: (p: string) => p.startsWith("/api-keys") },
+  { label: "API", href: "/api-keys", match: (p: string) => p.startsWith("/api-keys") },
 ];
 
 export function SidebarTabs() {
