@@ -7,7 +7,7 @@ const KEY_PREFIX = "rk_live_";
 // distinguish keys at a glance, short enough to reveal nothing useful.
 const DISPLAY_PREFIX_LENGTH = 12;
 
-export const MAX_ACTIVE_API_KEYS = 5;
+export const MAX_ACTIVE_API_KEYS = 3;
 
 export function generateApiKey(): { rawKey: string; keyPrefix: string; keyHash: string } {
   const rawKey = `${KEY_PREFIX}${randomBytes(32).toString("hex")}`;

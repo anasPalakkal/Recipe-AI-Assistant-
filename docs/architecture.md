@@ -299,7 +299,7 @@ altogether rather than patching around it.
 once, at creation, and is not retrievable again — same principle as the
 OTP code and password-reset token.
 
-Up to 5 concurrent active keys per user (an application-level check in
+Up to 3 concurrent active keys per user (an application-level check in
 the creation service, not a schema constraint — a business rule that
 may change, not a data-integrity rule). Supports rotation without
 downtime: issue a new key, roll it out, revoke the old one, with no
@@ -341,27 +341,49 @@ to solve a problem with no real stakes at this stage (no billing yet).
 Chosen deliberately, documented plainly in the public API docs rather
 than left implicit.
 
-**Fail-open on Redis errors, for both checks**, logged at `error` level.
-Redis is already a hard dependency via sessions; failing closed here
-would mean a transient Redis blip takes the entire public API offline
-for every integrator — a worse production outcome than briefly
-under-enforcing a limit during an outage.
+### Redis failure policy: throttle fails open, quota fails closed
 
-### Distinguishing the two `429`s
+Both failures are logged at `error` level, but they are handled
+differently because their failure costs differ:
+
+- **Throttle fails open.** It is an abuse control. Redis is already a
+  hard dependency via sessions, and a transient blip should not take the
+  whole public API offline. Briefly under-enforcing a per-minute limit
+  is the lesser harm.
+- **Quota fails closed.** Every request that passes the quota check
+  triggers a real upstream Gemini call on a key with a hard daily limit
+  (and, on a paid plan, real cost). Without a working counter nothing
+  caps that spend, so the request is rejected. The response is
+  `502 UPSTREAM_SERVICE_ERROR` ("Usage tracking is temporarily
+  unavailable"), not `QUOTA_EXCEEDED`: the caller has not used up their
+  allotment, and reporting it that way would mislead them.
+
+The vision (photo analysis) daily limit follows the same fail-closed
+policy for the same reason.
+
+### Distinguishing the error responses
 
 `RATE_LIMITED` (throttle) and `QUOTA_EXCEEDED` (quota) are different
-`error.code` values so a client can handle them differently. Only
-`RATE_LIMITED` carries a `Retry-After` header — a `Retry-After` on a
-monthly quota rejection would be misleading, since the real reset is a
-calendar boundary, not a short delay.
+`error.code` values, both HTTP 429, so a client can handle them
+differently. Only `RATE_LIMITED` carries a `Retry-After` header — a
+`Retry-After` on a monthly quota rejection would be misleading, since
+the real reset is a calendar boundary, not a short delay.
+
+Upstream AI failures are separate again: `AI_QUOTA_EXHAUSTED` (503)
+means the provider's own daily quota is spent, which is the service's
+problem and not the caller's, and `UPSTREAM_SERVICE_ERROR` (502) covers
+other provider failures. Both are classified outcomes, so they are
+cached for idempotent replay like any other `AppError`.
 
 ### Rate limit / quota response headers
 
 `X-RateLimit-Limit` / `-Remaining` / `-Reset` and `X-Quota-Limit` /
 `-Remaining` / `-Reset` are set on every response from
-`/v1/recipes/generate`, success or rejection — lets a well-behaved
-client self-throttle without guessing or needing a separate
-"check my limits" endpoint.
+`/v1/recipes/generate` that gets past authentication and body
+validation — success or rejection. They let a well-behaved client
+self-throttle without guessing or needing a separate "check my limits"
+endpoint. Replayed idempotent responses and validation failures do not
+carry fresh values, because no limit was consumed.
 
 ### Idempotency
 
@@ -389,6 +411,11 @@ of which auth mechanism authorized the request. Also sets
 downstream throttle/quota/usage-logging. Missing, malformed, unknown,
 and revoked keys all produce an identical `401` — distinguishing them
 would let a caller probe whether a specific key string was ever valid.
+
+The order of authentication, idempotency lookup, validation, throttle,
+quota and generation is covered by tests
+(`modules/public-api/recipe.routes.test.ts`), so a refactor cannot
+silently reorder it.
 
 ### Why the per-minute throttle is hand-rolled, not `@fastify/rate-limit`'s dynamic `max`
 

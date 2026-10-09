@@ -44,7 +44,7 @@ HTTP 401
 Create and delete keys on the API keys page of the web app. The page also shows daily usage for each key.
 
 - The raw key is shown **once**, when you create it, and cannot be retrieved again. If you lose it, delete it and create a new one.
-- You can hold up to 5 active keys, so you can rotate without downtime: create the new key, roll it out, then delete the old one.
+- You can hold up to 3 active keys, so you can rotate without downtime: create the new key, roll it out, then delete the old one.
 - Deleting a key takes effect immediately, and further requests with it return `401`.
 - Rate limit and monthly quota are set per key and cannot currently be changed from the dashboard.
 
