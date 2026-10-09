@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "build": "pnpm -r run build",
+    "test": "pnpm -r --if-present run test",
     "dev:api": "pnpm --filter @recipeai/api dev",
     "dev:web": "pnpm --filter @recipeai/web dev"
   },
