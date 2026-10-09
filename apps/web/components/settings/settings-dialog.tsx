@@ -5,12 +5,10 @@ import type { PublicUser } from "@/lib/api/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProfileSection } from "./profile-section";
 import { AppearanceSection } from "./appearance-section";
-import { AboutSection } from "./about-section";
 
 const SECTIONS = [
   { id: "profile", label: "Profile" },
   { id: "appearance", label: "Appearance" },
-  { id: "about", label: "About" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -56,7 +54,6 @@ export function SettingsDialog({ open, onOpenChange, user }: SettingsDialogProps
         <div role="tabpanel" className="min-h-56">
           {active === "profile" && <ProfileSection user={user} />}
           {active === "appearance" && <AppearanceSection />}
-          {active === "about" && <AboutSection />}
         </div>
       </DialogContent>
     </Dialog>

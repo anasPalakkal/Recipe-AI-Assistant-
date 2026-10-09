@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { APP_NAME } from "@/lib/brand";
+import { APP_NAME , CONTACT_EMAIL } from "@/lib/brand";
 
-const CONTACT_EMAIL = "mapshome.official@gmail.com";
 const LAST_UPDATED = "October 8, 2026";
 
 export const metadata: Metadata = {

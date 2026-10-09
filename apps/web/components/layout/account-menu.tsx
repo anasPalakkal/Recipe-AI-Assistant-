@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Settings01Icon, Logout01Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import {
+  Settings01Icon,
+  InformationCircleIcon,
+  Logout01Icon,
+  UnfoldMoreIcon,
+} from "@hugeicons/core-free-icons";
 import { logout, type PublicUser } from "@/lib/api/auth";
 import { getDisplayName } from "@/lib/utils";
 import {
@@ -13,10 +18,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { AboutDialog } from "@/components/settings/about-dialog";
 
 export function AccountMenu({ user }: { user: PublicUser }) {
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const displayName = getDisplayName(user);
 
   async function handleLogout() {
@@ -48,6 +55,10 @@ export function AccountMenu({ user }: { user: PublicUser }) {
             <HugeiconsIcon icon={Settings01Icon} size={16} />
             Settings
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setAboutOpen(true)}>
+            <HugeiconsIcon icon={InformationCircleIcon} size={16} />
+            About
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleLogout}>
             <HugeiconsIcon icon={Logout01Icon} size={16} />
             Log out
@@ -56,6 +67,7 @@ export function AccountMenu({ user }: { user: PublicUser }) {
       </DropdownMenu>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} user={user} />
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </>
   );
 }
