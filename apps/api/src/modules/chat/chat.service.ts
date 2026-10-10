@@ -1,4 +1,5 @@
-import { Prisma, MessageRole, MessageResponseType, ImageSource, GenerationStatus, RecipeSource } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { MessageRole, MessageResponseType, ImageSource, GenerationStatus, RecipeSource } from "../../lib/prisma-enums.js";
 import type { FastifyBaseLogger } from "fastify";
 import { aiProvider } from "../../lib/ai/index.js";
 import { MAX_CHAT_HISTORY_TURNS } from "../../lib/ai/gemini.provider.js";

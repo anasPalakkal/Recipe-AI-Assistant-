@@ -1,4 +1,5 @@
-import { Prisma, GenerationStatus, RecipeSource } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { GenerationStatus, RecipeSource } from "../../lib/prisma-enums.js";
 import type { ConsumerType } from "../../lib/ai/types.js";
 import { aiProvider } from "../../lib/ai/index.js";
 import { resolveRecipeImage, type PhotoResult } from "../../lib/images/index.js";
