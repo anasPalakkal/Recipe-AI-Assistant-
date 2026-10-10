@@ -14,6 +14,7 @@ import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
 import publicRecipeRoutes from "./modules/public-api/recipe.routes.js";
 import { redis } from "./lib/redis.js";
+import { clientIp } from "./lib/rate-limit.js";
 import chatRoutes from "./modules/chat/chat.routes.js";
 
 export function buildApp(): FastifyInstance {
@@ -23,7 +24,7 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(cookie, { secret: env.SESSION_SECRET });
-  app.register(rateLimit, { global: false, redis, skipOnError: true });
+  app.register(rateLimit, { global: false, redis, skipOnError: true, keyGenerator: clientIp });
   app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES } });
   app.register(sessionPlugin);
 

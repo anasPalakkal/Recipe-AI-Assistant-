@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 function getApiBaseUrl(): string {
@@ -9,20 +9,39 @@ function getApiBaseUrl(): string {
   return url;
 }
 
-export async function proxyToApi(path: string, init: RequestInit): Promise<NextResponse> {
+function getProxySecret(): string {
+  const secret = process.env.INTERNAL_PROXY_SECRET;
+  if (!secret) {
+    throw new Error("INTERNAL_PROXY_SECRET is not set");
+  }
+  return secret;
+}
+
+export async function proxyToApi(
+  path: string,
+  init: RequestInit,
+): Promise<NextResponse> {
   const apiBaseUrl = getApiBaseUrl();
   const cookieStore = await cookies();
   const sid = cookieStore.get("sid");
+  const clientIp = (await headers())
+    .get("x-forwarded-for")
+    ?.split(",")[0]
+    ?.trim();
 
   const apiResponse = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       ...(sid && { cookie: `sid=${sid.value}` }),
+      ...(clientIp && { "x-client-ip": clientIp }),
+      "x-internal-proxy-secret": getProxySecret(),
       ...init.headers,
     },
   });
 
-  const responseBody = apiResponse.status === 204 ? null : await apiResponse.arrayBuffer();
+  const responseBody =
+    apiResponse.status === 204 ? null : await apiResponse.arrayBuffer();
+
   const response = new NextResponse(responseBody, {
     status: apiResponse.status,
     headers: apiResponse.headers.get("content-type")
