@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 WORKDIR /repo
+RUN apk add --no-cache openssl
 RUN corepack enable
 
 FROM base AS build
@@ -15,6 +16,7 @@ RUN pnpm --filter @recipeai/shared build
 RUN pnpm --filter @recipeai/api prisma:generate
 RUN pnpm --filter @recipeai/api build
 RUN pnpm --filter @recipeai/api deploy --prod /out
+RUN cp -rf /repo/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma /out/node_modules/.pnpm/@prisma+client@*/node_modules/
 
 FROM base AS runtime
 ENV NODE_ENV=production
