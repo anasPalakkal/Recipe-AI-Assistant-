@@ -39,7 +39,6 @@ function cookieOptions() {
     path: "/",
     signed: true,
     maxAge: COOKIE_MAX_AGE_SECONDS,
-    domain: env.NODE_ENV === "production" ? env.COOKIE_DOMAIN : undefined,
   };
 }
 
@@ -63,7 +62,7 @@ export async function destroySession(request: FastifyRequest, reply: FastifyRepl
       }
     }
   }
-  reply.clearCookie(SESSION_COOKIE_NAME, { path: "/", domain: cookieOptions().domain });
+  reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
 }
 
 // Used by password reset: invalidates every active session for a user,

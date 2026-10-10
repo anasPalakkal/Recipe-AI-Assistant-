@@ -8,7 +8,7 @@ export default defineConfig({
       DATABASE_URL: "postgresql://test:test@localhost:5432/test",
       REDIS_URL: "redis://localhost:6379",
       SESSION_SECRET: "test-session-secret-at-least-32-characters-long",
-      COOKIE_DOMAIN: "localhost",
+      INTERNAL_PROXY_SECRET:"test-session-secret-at-least-32-characters-long",
       GOOGLE_CLIENT_ID: "test",
       AI_GATEWAY_BASE_URL: "http://localhost:9999",
       GEMINI_API_KEY: "test-internal-key",

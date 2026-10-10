@@ -40,7 +40,7 @@ services:
       DATABASE_URL: postgresql://recipeai:recipeai@postgres:5432/recipeai?schema=public
       REDIS_URL: redis://redis:6379
       SESSION_SECRET: local-dev-secret-change-in-real-envs-00000000
-      COOKIE_DOMAIN: localhost
+      INTERNAL_PROXY_SECRET: local-dev-proxy-secret-change-in-real-envs-0000
       GOOGLE_CLIENT_ID: placeholder-until-google-cloud-setup
       NODE_ENV: development
       PORT: 4000
