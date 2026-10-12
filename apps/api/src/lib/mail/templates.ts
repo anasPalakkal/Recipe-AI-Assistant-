@@ -1,3 +1,5 @@
+import { APP_NAME } from "../brand.js";
+
 export function verificationEmailHtml(code: string): string {
   return `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
@@ -33,7 +35,7 @@ export function passwordChangedEmailHtml(): string {
   return `
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
       <h2>Your password was changed</h2>
-      <p>This is a confirmation that your RecipeAI password was just changed. All other active sessions have been logged out.</p>
+      <p>This is a confirmation that your ${APP_NAME} password was just changed. All other active sessions have been logged out.</p>
       <p>If you didn't do this, your account may be compromised — reset your password again immediately.</p>
     </div>
   `;

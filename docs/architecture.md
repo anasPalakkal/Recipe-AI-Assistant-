@@ -1,4 +1,4 @@
-# RecipeAI — Architecture
+# ElaAI — Architecture
 
 This document records why the system is built the way it is: decisions
 that were non-obvious, had a real alternative, or were locked in after

@@ -1,6 +1,7 @@
 import { env } from "../../config/env.js";
 import { UpstreamServiceError } from "../errors.js";
 import type { EmailProvider } from "./types.js";
+import { APP_NAME } from "../brand.js";
 import {
   verificationEmailHtml,
   passwordResetEmailHtml,
@@ -13,19 +14,19 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 export class BrevoEmailProvider implements EmailProvider {
   async sendVerificationEmail(to: string, code: string): Promise<void> {
-    await this.send(to, "Verify your RecipeAI email", verificationEmailHtml(code));
+    await this.send(to, `Verify your ${APP_NAME} email`, verificationEmailHtml(code));
   }
 
   async sendPasswordResetEmail(to: string, resetLink: string): Promise<void> {
-    await this.send(to, "Reset your RecipeAI password", passwordResetEmailHtml(resetLink));
+    await this.send(to, `Reset your ${APP_NAME} password`, passwordResetEmailHtml(resetLink));
   }
 
   async sendAccountUsesGoogleEmail(to: string): Promise<void> {
-    await this.send(to, "RecipeAI password reset requested", googleAccountEmailHtml());
+    await this.send(to, `${APP_NAME} password reset requested`, googleAccountEmailHtml());
   }
 
   async sendPasswordChangedEmail(to: string): Promise<void> {
-    await this.send(to, "Your RecipeAI password was changed", passwordChangedEmailHtml());
+    await this.send(to, `Your ${APP_NAME} password was changed`, passwordChangedEmailHtml());
   }
 
   private async send(to: string, subject: string, htmlContent: string): Promise<void> {
@@ -42,7 +43,7 @@ export class BrevoEmailProvider implements EmailProvider {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          sender: { name: "RecipeAI", email: env.EMAIL_FROM },
+          sender: { name: APP_NAME, email: env.EMAIL_FROM },
           to: [{ email: to }],
           subject,
           htmlContent,

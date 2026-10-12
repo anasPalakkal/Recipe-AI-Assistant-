@@ -1,2 +1,2 @@
-export const APP_NAME = "Cookloom";
+export const APP_NAME = "ElaAI";
 export const CONTACT_EMAIL = "mapshome.official@gmail.com";

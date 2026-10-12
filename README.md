@@ -1,4 +1,4 @@
-# CookLoom
+# ElaAI
 
 AI recipe app and paid public API. Chat with an AI to generate recipes, refine
 them in plain language, identify dishes from a photo, and keep your favorites
