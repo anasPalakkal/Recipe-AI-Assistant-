@@ -41,5 +41,6 @@ export function getRetryAfterSeconds(error: ApiError): number | null {
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => null);
   const { message, code, details } = extractErrorMessage(body);
-  return new ApiError(message ?? "Request failed", response.status, code, details);
+  const fallback = response.status === 413 ? "The upload is too large." : "Request failed";
+  return new ApiError(message ?? fallback, response.status, code, details);
 }

@@ -6,6 +6,7 @@ import type {
 } from "@recipeai/shared";
 import type { RecipeResponse } from "@recipeai/shared";
 import { apiGet, apiPost, apiPatch, apiDelete, apiPostForm } from "./request";
+import { prepareImageForUpload } from "../prepare-image";
 
 export function listConversations(): Promise<ConversationSummary[]> {
   return apiGet<ConversationSummary[]>("/api/chat/conversations");
@@ -52,9 +53,9 @@ export function deleteConversation(conversationId: string): Promise<void> {
   return apiDelete<void>(`/api/chat/conversations/${conversationId}`);
 }
 
-function buildImageForm(file: File, question: string | undefined): FormData {
+async function buildImageForm(file: File, question: string | undefined): Promise<FormData> {
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("image", await prepareImageForUpload(file));
   if (question) formData.append("question", question);
   return formData;
 }
@@ -63,20 +64,20 @@ export function startConversation(prompt: string): Promise<SendMessageResponse> 
   return apiPost<SendMessageResponse>("/api/chat/messages", { prompt });
 }
 
-export function startConversationWithImage(
+export async function startConversationWithImage(
   file: File,
   question: string | undefined,
 ): Promise<SendMessageResponse> {
-  return apiPostForm<SendMessageResponse>("/api/chat/messages", buildImageForm(file, question));
+  return apiPostForm<SendMessageResponse>("/api/chat/messages", await buildImageForm(file, question));
 }
 
-export function sendImageMessage(
+export async function sendImageMessage(
   conversationId: string,
   file: File,
   question: string | undefined,
 ): Promise<SendMessageResponse> {
   return apiPostForm<SendMessageResponse>(
     `/api/chat/conversations/${conversationId}/messages`,
-    buildImageForm(file, question),
+    await buildImageForm(file, question),
   );
 }
