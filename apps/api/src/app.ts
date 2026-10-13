@@ -44,7 +44,7 @@ export function buildApp(): FastifyInstance {
 
   app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });
 
-  app.get("/health", async () => ({ status: "ok" }));
+  app.get("/health", { logLevel: "silent" }, async () => ({ status: "ok" }));
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
