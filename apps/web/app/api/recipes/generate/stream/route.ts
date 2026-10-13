@@ -1,25 +1,13 @@
-import { cookies } from "next/headers";
-
-function getApiBaseUrl(): string {
-  const url = process.env.API_BASE_URL;
-  if (!url) {
-    throw new Error("API_BASE_URL is not set");
-  }
-  return url;
-}
+import { getApiBaseUrl, upstreamHeaders } from "@/lib/api-upstream";
 
 export async function POST(request: Request): Promise<Response> {
-  const apiBaseUrl = getApiBaseUrl();
-  const cookieStore = await cookies();
-  const sid = cookieStore.get("sid");
-
   const body = await request.text();
 
-  const apiResponse = await fetch(`${apiBaseUrl}/internal/recipes/generate/stream`, {
+  const apiResponse = await fetch(`${getApiBaseUrl()}/internal/recipes/generate/stream`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(sid && { cookie: `sid=${sid.value}` }),
+      ...(await upstreamHeaders()),
     },
     body,
   });
