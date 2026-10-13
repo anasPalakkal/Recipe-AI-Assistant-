@@ -14,6 +14,7 @@ import * as recipeService from "../recipes/recipe.service.js";
 import type { AiResponse, ImageAnalysisResponse, UpdateConversationInput } from "@recipeai/shared";
 import { env } from "../../config/env.js";
 import { checkAndIncrementDaily, rollbackDaily } from "../../lib/daily-limit.js";
+import {UsageTrackingUnavailableError} from "../../lib/errors.js";
 
 const REFUSAL_MESSAGES: Record<"out_of_scope" | "unsafe_or_unclear", string> = {
   out_of_scope:
@@ -33,7 +34,7 @@ async function consumeChatDailyLimit(userId: string, logger: FastifyBaseLogger):
   if (result.allowed) return;
 
   if (result.redisUnavailable) {
-    throw new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.");
+    throw new UsageTrackingUnavailableError();
   }
   throw new TooManyRequestsError(
     "You've reached today's message limit. It resets daily at 5:30 AM IST.",
@@ -345,7 +346,7 @@ export async function sendImageMessage(
     const quota = await checkAndIncrementVisionQuota(userId, VISION_DAILY_LIMIT, logger);
     if (!quota.allowed) {
       if (quota.redisUnavailable) {
-        throw new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.");
+        throw new UsageTrackingUnavailableError();
       }
       throw new TooManyRequestsError("Daily image analysis limit reached. Try again tomorrow.", "VISION_QUOTA_EXCEEDED");
     }
@@ -361,7 +362,7 @@ export async function sendImageMessage(
       // Never reached Gemini - doesn't count against the daily allowance.
       await rollbackVisionQuota(userId, logger);
       logger.error({ err, userId }, "failed to upload user image to Cloudinary");
-      throw new UpstreamServiceError("Failed to store the uploaded image. Please try again.");
+      throw new UpstreamServiceError("Image storage failed", "Failed to store the uploaded image. Please try again.");
     }
 
     const promptLabel = question ?? "[image analysis]";

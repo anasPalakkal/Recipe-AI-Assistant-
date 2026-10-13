@@ -63,8 +63,17 @@ export class TooManyRequestsError extends AppError {
 }
 
 export class UpstreamServiceError extends AppError {
-  constructor(message = "Upstream service error") {
-    super(message, 502, "UPSTREAM_SERVICE_ERROR");
+  constructor(
+    public readonly detail = "Upstream service error",
+    publicMessage = "A required service is temporarily unavailable. Please try again in a moment.",
+  ) {
+    super(publicMessage, 502, "UPSTREAM_SERVICE_ERROR");
+  }
+}
+
+export class UsageTrackingUnavailableError extends UpstreamServiceError {
+  constructor(detail = "Usage tracking unavailable") {
+    super(detail, "Usage tracking is temporarily unavailable. Please retry shortly.");
   }
 }
 

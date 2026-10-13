@@ -5,7 +5,7 @@ import multipart from "@fastify/multipart";
 import { ZodError } from "zod";
 import { loggerOptions } from "./lib/logger.js";
 import { env } from "./config/env.js";
-import { AppError, TooManyRequestsError, formatAppErrorBody } from "./lib/errors.js";
+import { AppError, TooManyRequestsError, UpstreamServiceError, formatAppErrorBody } from "./lib/errors.js";
 import { MAX_UPLOAD_BYTES } from "./lib/vision/validate-image.js";
 import sessionPlugin from "./plugins/session.plugin.js";
 import { requireVerifiedEmail } from "./modules/auth/require-verified-email.js";
@@ -48,6 +48,9 @@ export function buildApp(): FastifyInstance {
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
+      if (error instanceof UpstreamServiceError) {
+        request.log.warn({ detail: error.detail }, "upstream service error");
+      }
       if (error instanceof TooManyRequestsError && error.retryAfterSeconds !== undefined) {
         reply.header("Retry-After", String(error.retryAfterSeconds));
       }

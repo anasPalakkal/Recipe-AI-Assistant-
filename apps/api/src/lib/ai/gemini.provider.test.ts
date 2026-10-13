@@ -70,4 +70,18 @@ describe("GeminiProvider error handling", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("test-public-key");
   });
+
+  it("keeps the provider status out of the user-facing message", async () => {
+  mockFetch(
+    () => new Response("{}", { status: 503 }),
+    () => new Response("{}", { status: 503 }),
+    () => new Response("{}", { status: 503 }),
+  );
+
+  const error = await new GeminiProvider().generateRecipe("pasta", "internal").catch((e) => e);
+
+  expect(error).toBeInstanceOf(UpstreamServiceError);
+  expect(error.message).not.toContain("503");
+  expect(error.detail).toContain("503");
+});
 });

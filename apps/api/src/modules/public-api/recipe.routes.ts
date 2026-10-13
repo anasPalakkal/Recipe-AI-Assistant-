@@ -14,6 +14,7 @@ import {
   TooManyRequestsError,
   UpstreamServiceError,
   formatAppErrorBody,
+  UsageTrackingUnavailableError,
 } from "../../lib/errors.js";
 
 const ENDPOINT = "POST /v1/recipes/generate";
@@ -97,7 +98,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
 
     if (!daily.allowed) {
       const err = daily.redisUnavailable
-        ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
+        ? new UsageTrackingUnavailableError()
         : new TooManyRequestsError("Daily limit exceeded. Resets at 00:00 UTC.", USAGE_ERROR_CODE.DAILY_LIMIT_EXCEEDED);
       await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
@@ -120,7 +121,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       // case is a different failure than a legitimate over-quota
       // rejection and must not be reported to the caller as one.
       const err = quota.redisUnavailable
-        ? new UpstreamServiceError("Usage tracking is temporarily unavailable. Please retry shortly.")
+        ? new UsageTrackingUnavailableError()
         : new TooManyRequestsError("Monthly quota exceeded.", USAGE_ERROR_CODE.QUOTA_EXCEEDED);
       await logUsage(apiKeyId, err.statusCode, err.code, request.log);
       return reply.status(err.statusCode).send(formatAppErrorBody(err));
@@ -136,6 +137,9 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     } catch (err) {
       if (err instanceof AppError) {
         const body = formatAppErrorBody(err);
+        if (err instanceof UpstreamServiceError) {
+          request.log.warn({ detail: err.detail }, "upstream service error");
+        }
         await logUsage(apiKeyId, err.statusCode, err.code, request.log);
         if (idempotencyKey) {
           await cacheResponse(apiKeyId, idempotencyKey, { statusCode: err.statusCode, body }, request.log);
