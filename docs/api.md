@@ -2,14 +2,14 @@
 
 Generate structured recipes from a natural-language prompt.
 
-Base URL: `https://YOUR_API_HOST`
+Base URL: `https://elaai-api.onrender.com`
 
 ## Quick start
 
 Create an API key on the API keys page, then send a request:
 
 ```bash
-curl -X POST https://YOUR_API_HOST/v1/recipes/generate \
+curl -X POST https://elaai-api.onrender.com/v1/recipes/generate \
   -H "Authorization: Bearer rk_live_YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "a quick vegetarian pasta dish"}'

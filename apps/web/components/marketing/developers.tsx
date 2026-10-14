@@ -2,7 +2,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { SectionHeading } from "./section-heading";
 
-const CURL_EXAMPLE = `curl -X POST https://YOUR_API_HOST/v1/recipes/generate \\
+const CURL_EXAMPLE = `curl -X POST https://elaai-api.onrender.com/v1/recipes/generate \\
   -H "Authorization: Bearer rk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"prompt": "a quick vegetarian pasta dish"}'`;
