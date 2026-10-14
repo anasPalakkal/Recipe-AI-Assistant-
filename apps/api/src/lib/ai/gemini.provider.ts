@@ -16,6 +16,13 @@ const MAX_OUTPUT_TOKENS = 4096;
 
 export const MAX_CHAT_HISTORY_TURNS = 20;
 
+const BUSY_MESSAGE = "The AI service is busy right now. Please try again in a moment.";
+
+function providerStatusError(status: number): UpstreamServiceError {
+  const busy = status === 429 || status === 503 || status === 504;
+  return new UpstreamServiceError(`AI provider returned status ${status}`, busy ? BUSY_MESSAGE : undefined);
+}
+
 const SYSTEM_INSTRUCTION = `You are a cooking and nutrition assistant for a recipe app. For every user message, respond with exactly one JSON object matching this shape:
 {
   "type": "recipe" | "food_info" | "refused",
@@ -291,7 +298,7 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
             if (response.ok || !RETRYABLE_STATUSES.has(response.status)) {
                 return response;
             }
-            lastError = new UpstreamServiceError(`AI provider returned status ${response.status}`);
+            lastError = providerStatusError(response.status);
         } catch (err) {
             if (err instanceof AiQuotaExhaustedError) throw err;
             if (err instanceof Error && err.name === "AbortError") throw err;
@@ -335,7 +342,7 @@ async function fetchNonStreamingWithRetry(
                 return response;
             }
             if (statusRetriesUsed >= MAX_RETRIES) {
-                throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+                throw providerStatusError(response.status);
             }
             await sleep(RETRY_BASE_DELAY_MS * 2 ** statusRetriesUsed);
             statusRetriesUsed++;
@@ -378,7 +385,7 @@ async function requestFromGemini<T>(
     }));
 
     if (!response.ok) {
-        throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+        throw providerStatusError(response.status);
     }
 
     let payload: unknown;
@@ -473,7 +480,7 @@ export class GeminiProvider implements AiProvider {
 
         if (!response.ok || !response.body) {
             timeout.cleanup();
-            throw new UpstreamServiceError(`AI provider returned status ${response.status}`);
+            throw providerStatusError(response.status);
         }
 
         const reader = response.body.getReader();
