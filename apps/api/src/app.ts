@@ -14,7 +14,7 @@ import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import apiKeyRoutes from "./modules/api-keys/api-key.routes.js";
 import publicRecipeRoutes from "./modules/public-api/recipe.routes.js";
 import { redis } from "./lib/redis.js";
-import { clientIp } from "./lib/rate-limit.js";
+import { clientIp, requireInternalProxy } from "./lib/internal-proxy.js";
 import chatRoutes from "./modules/chat/chat.routes.js";
 
 export function buildApp(): FastifyInstance {
@@ -28,18 +28,25 @@ export function buildApp(): FastifyInstance {
   app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES } });
   app.register(sessionPlugin);
 
-  app.register(authRoutes, { prefix: "/internal/auth" });
+  // Everything under /internal is reachable only through the web proxy.
+  // The hook runs before route-level hooks, so rejected callers never
+  // touch a rate-limit bucket or a handler.
+  app.register(async (internal) => {
+    internal.addHook("onRequest", requireInternalProxy);
 
-  // Every route registered inside this scope requires an authenticated,
-  // email-verified session. A module registered here is protected by
-  // default — no per-route hook to remember or forget.
-  app.register(async (verified) => {
-    verified.addHook("preHandler", verified.authenticate);
-    verified.addHook("preHandler", requireVerifiedEmail);
+    internal.register(authRoutes, { prefix: "/internal/auth" });
 
-    verified.register(recipeRoutes, { prefix: "/internal/recipes" });
-    verified.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
-    verified.register(chatRoutes, { prefix: "/internal/chat" });
+    // Every route registered inside this scope requires an authenticated,
+    // email-verified session. A module registered here is protected by
+    // default — no per-route hook to remember or forget.
+    internal.register(async (verified) => {
+      verified.addHook("preHandler", verified.authenticate);
+      verified.addHook("preHandler", requireVerifiedEmail);
+
+      verified.register(recipeRoutes, { prefix: "/internal/recipes" });
+      verified.register(apiKeyRoutes, { prefix: "/internal/api-keys" });
+      verified.register(chatRoutes, { prefix: "/internal/chat" });
+    });
   });
 
   app.register(publicRecipeRoutes, { prefix: "/v1/recipes" });
