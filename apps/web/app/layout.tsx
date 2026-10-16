@@ -11,6 +11,8 @@ import type { Metadata } from "next";
 import { APP_NAME } from "@/lib/brand";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://elaai.vercel.app"),
+  description: "Describe what you want to cook and get a complete recipe, then save the ones you like.",
   title: { default: APP_NAME, template: `%s | ${APP_NAME}` },
 };
 
