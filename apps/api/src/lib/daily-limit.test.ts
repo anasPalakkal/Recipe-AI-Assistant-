@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
 
-vi.mock("./redis.js", () => ({ redis: { incr: vi.fn(), expire: vi.fn(), decr: vi.fn() } }));
+vi.mock("./redis.js", () => ({ redis: { incr: vi.fn(), expire: vi.fn(), eval: vi.fn() } }));
 
 import { redis } from "./redis.js";
 import { checkAndIncrementDaily, rollbackDaily } from "./daily-limit.js";
 
 const incr = vi.mocked(redis.incr);
 const expire = vi.mocked(redis.expire);
-const decr = vi.mocked(redis.decr);
+const evalScript = vi.mocked(redis.eval);
 const logger = { error: vi.fn(), warn: vi.fn() } as unknown as FastifyBaseLogger;
 
 beforeEach(() => {
@@ -44,10 +44,22 @@ describe("checkAndIncrementDaily", () => {
 });
 
 describe("rollbackDaily", () => {
-  it("decrements the counter and swallows Redis errors", async () => {
-    decr.mockRejectedValue(new Error("down"));
+  it("runs the guarded decrement on the daily key", async () => {
+    evalScript.mockResolvedValue(0);
+
+    await rollbackDaily("chat", "user-1", logger);
+
+    expect(evalScript).toHaveBeenCalledWith(
+      expect.any(String),
+      1,
+      expect.stringMatching(/^daily:chat:user-1:\d{4}-\d{2}-\d{2}$/),
+    );
+  });
+
+  it("swallows Redis errors", async () => {
+    evalScript.mockRejectedValue(new Error("down"));
 
     await expect(rollbackDaily("chat", "user-1", logger)).resolves.toBeUndefined();
-    expect(decr).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { redis } from "./redis.js";
+import { decrementIfPositive } from "./redis-counter.js";
 
 export interface DailyLimitResult {
   allowed: boolean;
@@ -51,8 +52,8 @@ export async function checkAndIncrementDaily(
 // Best-effort: a failed rollback only leaves the counter one higher.
 export async function rollbackDaily(scope: string, id: string, logger: FastifyBaseLogger): Promise<void> {
   try {
-    await redis.decr(dailyKey(scope, id));
-  } catch (err) {
+    await decrementIfPositive(dailyKey(scope, id));
+    } catch (err) {
     logger.warn({ err, scope, id }, "failed to roll back daily limit");
   }
 }
