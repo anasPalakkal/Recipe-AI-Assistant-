@@ -337,13 +337,22 @@ an abuse control. Collapsing them would mean either the abuse throttle
 resets monthly (useless against bursts) or the quota resets every
 minute (useless as a usage cap).
 
-**Quota counts every attempt that reaches it, including generations
-that later fail upstream.** The alternative — only counting successes —
-requires reserve-and-release semantics (decrement on failure), which
-reopens a race window during the release lag and adds real complexity
-to solve a problem with no real stakes at this stage (no billing yet).
-Chosen deliberately, documented plainly in the public API docs rather
-than left implicit.
+**Counters reserve first and release on transient failure.** Each
+request increments the daily and monthly counters before generation
+(reserve). The slot is released when the request never reaches Gemini
+(rejected by a later check) or when generation fails transiently
+(`UpstreamServiceError`, `AiQuotaExhaustedError`). Outcomes where the
+Gemini call completed (200 and classified 422s) and unexpected 500s keep
+the count, since the upstream may have been called.
+
+Release is a guarded decrement (`lib/redis-counter.ts`, a Lua script)
+that never takes a counter below zero. A plain `DECR` on an expired key
+recreates it at -1 with no TTL, so the next `INCR` returns 0 and the
+expiry is never set. The trade-off: while a request holds a slot, a
+concurrent request can be rejected even though the first one later fails
+and releases it. Admission is still decided by the `INCR` result, so
+the limit can never be exceeded. Release is best-effort; a failed
+release leaves the counter one higher.
 
 ### Daily limits: protecting a shared upstream cap
 
@@ -366,10 +375,10 @@ variables rather than `ApiKey` columns because they are expected to
 change the day billing is enabled, and a schema change per tuning is
 the wrong cost.
 
-The chat counter is rolled back if the request fails on our side or
-upstream, so a failure doesn't cost the user a message. The public
-counter is not rolled back, consistent with the quota's
-count-every-attempt policy above.
+Both counters follow the reserve-and-release policy above: a failure on
+our side or a transient upstream failure doesn't cost the caller a
+message. A request rejected by the daily limit or the monthly quota also
+undoes its own increment, so rejected requests never inflate a counter.
 
 **Not built, on purpose:** a global counter mirroring Gemini's own
 limit. It would only save one failed upstream call, since
@@ -409,8 +418,8 @@ boundary, not a short delay.
 Upstream AI failures are separate again: `AI_QUOTA_EXHAUSTED` (503)
 means the provider's own daily quota is spent, which is the service's
 problem and not the caller's, and `UPSTREAM_SERVICE_ERROR` (502) covers
-other provider failures. Both are classified outcomes, so they are
-cached for idempotent replay like any other `AppError`.
+other provider failures.Both are transient: they are not cached for idempotent replay, and the
+counters are released.
 
 ### Rate limit / quota response headers
 
@@ -435,8 +444,10 @@ trigger a second real Gemini call and double-count quota. Cached in
 Redis with a 24-hour TTL, scoped per API key so the same key value used
 by two different callers is treated as two independent requests.
 
-Unexpected (non-`AppError`) failures are deliberately never cached —
-only classified, deterministic outcomes are safe to treat as replayable.
+Only deterministic outcomes are cached: successes and classified
+4xx/422 results. Unexpected (non-`AppError`) failures and transient
+upstream failures (502/503) are never cached, because replaying them for
+24 hours would stop a retrying client from ever getting a real attempt.
 
 ### `apiKeyAuth` — same contract as session `authenticate`
 
@@ -498,6 +509,10 @@ routes, where this ordering issue doesn't apply.
 - **Payments** — deferred. Plans would map to the per-key limits already
   stored on `ApiKey`, with a hosted checkout and signature-verified,
   idempotent webhooks as the source of truth.
+- **Idempotency gaps** — a retry that arrives while the first request is
+  still running misses the cache and triggers a second Gemini call, and
+  the same key with a different body replays the first response. Fix is
+  an in-flight `SET NX` marker and a stored body hash; not built yet.
 
 ---
 

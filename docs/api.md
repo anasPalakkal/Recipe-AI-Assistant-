@@ -131,16 +131,18 @@ Sent on every response after authentication, including rejections, so a client c
 
 Checks run in this order: authentication, validation, rate limit, daily limit, quota, generation.
 
-| Outcome | Consumes rate limit | Consumes quota |
-|---|---|---|
-| `400` validation error | No | No |
-| `429 RATE_LIMITED` | Yes | No |
-| `429 QUOTA_EXCEEDED` | Yes | Already over the limit |
-| `429 DAILY_LIMIT_EXCEEDED` | Yes | No |
-| Reaches generation and succeeds | Yes | Yes |
-| Reaches generation and fails (`422`, `502`) | Yes | Yes |
+| Outcome | Rate limit | Daily limit | Monthly quota |
+|---|---|---|---|
+| `400` validation error | No | No | No |
+| `429 RATE_LIMITED` | Yes | No | No |
+| `429 DAILY_LIMIT_EXCEEDED` | Yes | No | No |
+| `429 QUOTA_EXCEEDED` | Yes | No | No |
+| Succeeds | Yes | Yes | Yes |
+| `422` (the request reached generation) | Yes | Yes | Yes |
+| `502` or `503` (AI provider unavailable) | Yes | No | No |
+| Unexpected `500` | Yes | Yes | Yes |
 
-The quota is charged before generation starts, so a client that disconnects mid-request is still counted.
+The daily limit and quota are reserved before generation starts, so a client that disconnects mid-request is still counted. If generation fails because the AI provider is unavailable (`502` or `503`), the reserved daily and monthly counts are returned to you, and the error is not stored for your `Idempotency-Key`, so you can retry immediately.
 
 ### `429 RATE_LIMITED`
 
