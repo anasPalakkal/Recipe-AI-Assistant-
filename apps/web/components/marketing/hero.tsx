@@ -28,8 +28,8 @@ export function Hero({ signedIn }: { signedIn: boolean }) {
       <div className="mx-auto mt-14 max-w-4xl">
         <MediaFrame label={`Screen recording of ${APP_NAME} generating a recipe`}>
           <DemoVideo
-            src="/videos/cookloom-demo.mp4"
-            poster="/videos/cookloom-demo-poster.jpg"
+            src="/videos/elaai-demo.mp4"
+            poster="/videos/elaai-demo-poster.jpg"
             label={`Screen recording of ${APP_NAME} generating a recipe from a typed prompt`}
           />
         </MediaFrame>
