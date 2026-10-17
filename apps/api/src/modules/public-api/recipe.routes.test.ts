@@ -15,22 +15,22 @@ vi.mock("../../lib/api-key-auth.js", () => ({
   }),
 }));
 vi.mock("../../lib/throttle.js", () => ({ checkAndIncrementThrottle: vi.fn() }));
-vi.mock("../../lib/quota.js", () => ({ checkAndIncrementQuota: vi.fn() }));
+vi.mock("../../lib/quota.js", () => ({ checkAndIncrementQuota: vi.fn(), rollbackQuota: vi.fn() }));
 vi.mock("../../lib/idempotency.js", () => ({
   getCachedResponse: vi.fn(),
   cacheResponse: vi.fn(),
 }));
 vi.mock("../recipes/recipe.service.js", () => ({ generateRecipeDraft: vi.fn() }));
-vi.mock("../../lib/daily-limit.js", () => ({ checkAndIncrementDaily: vi.fn() }));
+vi.mock("../../lib/daily-limit.js", () => ({ checkAndIncrementDaily: vi.fn(), rollbackDaily: vi.fn() }));
 
 import publicRecipeRoutes from "./recipe.routes.js";
 import { prisma } from "../../lib/prisma.js";
 import { checkAndIncrementThrottle } from "../../lib/throttle.js";
-import { checkAndIncrementQuota } from "../../lib/quota.js";
+import { checkAndIncrementQuota, rollbackQuota } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
 import * as recipeService from "../recipes/recipe.service.js";
-import { UnprocessableEntityError } from "../../lib/errors.js";
-import { checkAndIncrementDaily } from "../../lib/daily-limit.js";
+import { AiQuotaExhaustedError, UnprocessableEntityError, UpstreamServiceError } from "../../lib/errors.js";
+import { checkAndIncrementDaily, rollbackDaily } from "../../lib/daily-limit.js";
 
 const throttle = vi.mocked(checkAndIncrementThrottle);
 const quota = vi.mocked(checkAndIncrementQuota);
@@ -38,6 +38,8 @@ const getCached = vi.mocked(getCachedResponse);
 const cache = vi.mocked(cacheResponse);
 const generate = vi.mocked(recipeService.generateRecipeDraft);
 const createUsage = vi.mocked(prisma.usageRecord.create);
+const rollbackQuotaMock = vi.mocked(rollbackQuota);
+const rollbackDailyMock = vi.mocked(rollbackDaily);
 
 const allowedThrottle = { allowed: true, limit: 20, count: 1, resetAt: 1_800_000_000 } as never;
 const allowedQuota = { allowed: true, limit: 300, used: 1, resetAt: 1_800_000_000 } as never;
@@ -202,5 +204,69 @@ describe("POST /v1/recipes/generate", () => {
     expect(response.headers["retry-after"]).toBeUndefined();
     expect(quota).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
+  });
+
+    it("undoes its own daily increment when rejected by the daily limit", async () => {
+    daily.mockResolvedValue({ ...(allowedDaily as object), allowed: false, used: 4 } as never);
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(rollbackDailyMock).toHaveBeenCalledWith("public", "key-1", expect.anything());
+    expect(rollbackQuotaMock).not.toHaveBeenCalled();
+  });
+
+  it("does not roll back the daily counter when Redis was unavailable for it", async () => {
+    daily.mockResolvedValue({ ...(allowedDaily as object), allowed: false, redisUnavailable: true } as never);
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(rollbackDailyMock).not.toHaveBeenCalled();
+  });
+
+  it("undoes the daily and monthly increments when rejected by the monthly quota", async () => {
+    quota.mockResolvedValue({ ...(allowedQuota as object), allowed: false, used: 301 } as never);
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(rollbackDailyMock).toHaveBeenCalledTimes(1);
+    expect(rollbackQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("undoes only the daily increment when the quota check hit a Redis outage", async () => {
+    quota.mockResolvedValue({ ...(allowedQuota as object), allowed: false, redisUnavailable: true } as never);
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(rollbackDailyMock).toHaveBeenCalledTimes(1);
+    expect(rollbackQuotaMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["UpstreamServiceError", () => new UpstreamServiceError("gemini 503")],
+    ["AiQuotaExhaustedError", () => new AiQuotaExhaustedError()],
+  ])("rolls back both counters and does not cache a transient %s", async (_name, makeError) => {
+    generate.mockRejectedValue(makeError());
+    const app = await buildTestApp();
+
+    const response = await post(app, { "idempotency-key": "abc" });
+
+    expect([502, 503]).toContain(response.statusCode);
+    expect(rollbackDailyMock).toHaveBeenCalledTimes(1);
+    expect(rollbackQuotaMock).toHaveBeenCalledTimes(1);
+    expect(cache).not.toHaveBeenCalled();
+  });
+
+  it("keeps both counters after a classified 422", async () => {
+    generate.mockRejectedValue(new UnprocessableEntityError("nope", "OUT_OF_SCOPE"));
+    const app = await buildTestApp();
+
+    await post(app);
+
+    expect(rollbackDailyMock).not.toHaveBeenCalled();
+    expect(rollbackQuotaMock).not.toHaveBeenCalled();
   });
 }); 

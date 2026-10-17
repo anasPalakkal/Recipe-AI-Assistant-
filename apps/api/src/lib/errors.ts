@@ -94,3 +94,7 @@ export function formatAppErrorBody(error: AppError) {
     },
   };
 }
+
+export function isTransientUpstreamError(error: unknown): boolean {
+  return error instanceof UpstreamServiceError || error instanceof AiQuotaExhaustedError;
+}

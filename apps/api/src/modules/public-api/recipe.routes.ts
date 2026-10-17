@@ -4,16 +4,17 @@ import * as recipeService from "../recipes/recipe.service.js";
 import { prisma } from "../../lib/prisma.js";
 import { apiKeyAuth } from "../../lib/api-key-auth.js";
 import { checkAndIncrementThrottle, type ThrottleCheckResult } from "../../lib/throttle.js";
-import { checkAndIncrementQuota, type QuotaCheckResult } from "../../lib/quota.js";
+import { checkAndIncrementQuota, rollbackQuota, type QuotaCheckResult } from "../../lib/quota.js";
 import { getCachedResponse, cacheResponse } from "../../lib/idempotency.js";
 import { USAGE_ERROR_CODE } from "../../lib/usage-error-codes.js";
 import { env } from "../../config/env.js";
-import { checkAndIncrementDaily, type DailyLimitResult } from "../../lib/daily-limit.js";
+import { checkAndIncrementDaily, rollbackDaily, type DailyLimitResult } from "../../lib/daily-limit.js";
 import {
   AppError,
   TooManyRequestsError,
   UpstreamServiceError,
   formatAppErrorBody,
+  isTransientUpstreamError,
   UsageTrackingUnavailableError,
 } from "../../lib/errors.js";
 
@@ -97,6 +98,9 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     setDailyHeaders(reply, daily);
 
     if (!daily.allowed) {
+      if (!daily.redisUnavailable) {
+        await rollbackDaily("public", apiKeyId, request.log);
+      }
       const err = daily.redisUnavailable
         ? new UsageTrackingUnavailableError()
         : new TooManyRequestsError("Daily limit exceeded. Resets at 00:00 UTC.", USAGE_ERROR_CODE.DAILY_LIMIT_EXCEEDED);
@@ -107,7 +111,7 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     // Quota is checked (and incremented) before generation begins, so a
     // disconnected or aborted request never gets a free uncounted call.
     // This does mean requests that fail after this point still count —
-    // see architecture.md §6 for the policy and reasoning.
+    // see architecture.md §5 for the policy and reasoning.
     const quota = await checkAndIncrementQuota(
       apiKeyId,
       request.apiKeyMonthlyQuota ?? DEFAULT_MONTHLY_QUOTA,
@@ -116,6 +120,12 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
     setQuotaHeaders(reply, quota);
 
     if (!quota.allowed) {
+      // This request never reaches Gemini, so it must not hold a daily
+      // slot, nor inflate the monthly counter it just exceeded.
+      await rollbackDaily("public", apiKeyId, request.log);
+      if (!quota.redisUnavailable) {
+        await rollbackQuota(apiKeyId, request.log);
+      }
       // A Redis outage during the quota check fails closed (see quota.ts)
       // to avoid uncapped spend on the real upstream Gemini key. That
       // case is a different failure than a legitimate over-quota
@@ -135,13 +145,24 @@ export default async function publicRecipeRoutes(app: FastifyInstance) {
       }
       return reply.status(200).send(draft);
     } catch (err) {
+
       if (err instanceof AppError) {
         const body = formatAppErrorBody(err);
+        const transient = isTransientUpstreamError(err);
+
         if (err instanceof UpstreamServiceError) {
           request.log.warn({ detail: err.detail }, "upstream service error");
         }
+        if (transient) {
+          await Promise.all([
+            rollbackDaily("public", apiKeyId, request.log),
+            rollbackQuota(apiKeyId, request.log),
+          ]);
+        }
         await logUsage(apiKeyId, err.statusCode, err.code, request.log);
-        if (idempotencyKey) {
+        // A transient failure must not be replayed for 24 hours: the client
+        // retrying with the same key would never get a real attempt.
+        if (idempotencyKey && !transient) {
           await cacheResponse(apiKeyId, idempotencyKey, { statusCode: err.statusCode, body }, request.log);
         }
         return reply.status(err.statusCode).send(body);

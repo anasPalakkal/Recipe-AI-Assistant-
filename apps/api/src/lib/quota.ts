@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { redis } from "./redis.js";
+import { decrementIfPositive } from "./redis-counter.js";
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -58,5 +59,14 @@ export async function checkAndIncrementQuota(
   } catch (err) {
     logger.error({ err, apiKeyId }, "quota check failed, failing closed (cost exposure risk)");
     return { allowed: false, used: 0, limit: monthlyQuota, resetAt, redisUnavailable: true };
+  }
+}
+
+// Best-effort: a failed rollback only leaves the counter one higher.
+export async function rollbackQuota(apiKeyId: string, logger: FastifyBaseLogger): Promise<void> {
+  try {
+    await decrementIfPositive(quotaKey(apiKeyId));
+  } catch (err) {
+    logger.warn({ err, apiKeyId }, "failed to roll back monthly quota");
   }
 }
