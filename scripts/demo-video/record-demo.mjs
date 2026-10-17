@@ -6,7 +6,7 @@ const PROMPT = process.env.DEMO_PROMPT ?? "Creamy garlic mushroom pasta";
 const VIEWPORT = { width: 1600, height: 900 };
 const AUTH_STATE = "scripts/demo-video/.auth/state.json";
 const OUTPUT_DIR = "scripts/demo-video/output";
-const OUTPUT_FILE = `${OUTPUT_DIR}/cookloom-demo-raw.webm`;
+const OUTPUT_FILE = `${OUTPUT_DIR}/elaai-demo-raw.webm`;
 const MARKS_FILE = `${OUTPUT_DIR}/marks.json`;
 const GENERATION_TIMEOUT_MS = 60_000;
 

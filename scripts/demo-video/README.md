@@ -24,9 +24,9 @@ Output goes to `output/`, which is gitignored. Compress the result for the
 landing page and copy it into `apps/web/public/videos/`:
 
 ```bash
-ffmpeg -i output/cookloom-demo.mp4 -vf "scale=1280:-2,fps=30" -c:v libx264 \
+ffmpeg -i output/elaai-demo.mp4 -vf "scale=1280:-2,fps=30" -c:v libx264 \
   -preset slow -crf 22 -pix_fmt yuv420p -movflags +faststart -an \
-  ../../apps/web/public/videos/cookloom-demo.mp4
+  ../../apps/web/public/videos/elaai-demo.mp4
 ```
 
 `.auth/state.json` is a live login session. Never commit it.

@@ -5,8 +5,8 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 
 const OUTPUT_DIR = "scripts/demo-video/output";
-const RAW_FILE = `${OUTPUT_DIR}/cookloom-demo-raw.webm`;
-const FINAL_FILE = `${OUTPUT_DIR}/cookloom-demo.mp4`;
+const RAW_FILE = `${OUTPUT_DIR}/elaai-demo-raw.webm`;
+const FINAL_FILE = `${OUTPUT_DIR}/elaai-demo.mp4`;
 const KEEP_LOADING_SECONDS = 2.5;
 const FAST_FORWARD_TARGET_SECONDS = 2;
 const TAIL_MARGIN_SECONDS = 0.4;
