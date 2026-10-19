@@ -1,6 +1,6 @@
-# Recipe Generation API (v1)
+# ElaAI API
 
-Generate structured recipes from a natural-language prompt.
+Generate structured recipes from a natural-language prompt. Version 1.
 
 Base URL: `https://elaai-api.onrender.com`
 
