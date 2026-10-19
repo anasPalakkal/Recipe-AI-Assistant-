@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-// Verify Copy01Icon exists; Tick02Icon is confirmed (used in dropdown-menu.tsx).
 import { PlusSignIcon, Copy01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import type { CreatedApiKeyResponse } from "@recipeai/shared";
 import * as apiKeysApi from "@/lib/api/api-keys";
@@ -11,6 +10,7 @@ import { ApiError } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buildCurlExample } from "@/lib/api-example";
 import {
     Dialog,
     DialogContent,
@@ -27,14 +27,14 @@ export function CreateKeyDialog() {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [created, setCreated] = useState<CreatedApiKeyResponse | null>(null);
-    const [copied, setCopied] = useState(false);
+    const [copied, setCopied] = useState<"key" | "command" | null>(null);
 
     function reset() {
         setName("");
         setBusy(false);
         setError(null);
         setCreated(null);
-        setCopied(false);
+        setCopied(null);
     }
 
     function handleOpenChange(next: boolean) {
@@ -62,11 +62,12 @@ export function CreateKeyDialog() {
         }
     }
 
-    async function handleCopy() {
+        async function handleCopy(kind: "key" | "command") {
         if (!created) return;
-        await navigator.clipboard.writeText(created.rawKey);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        const text = kind === "key" ? created.rawKey : buildCurlExample(created.rawKey);
+        await navigator.clipboard.writeText(text);
+        setCopied(kind);
+        setTimeout(() => setCopied(null), 2000);
     }
 
     return (
@@ -86,9 +87,26 @@ export function CreateKeyDialog() {
                         </DialogHeader>
                         <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted px-3 py-2">
                             <code className="min-w-0 flex-1 break-all text-sm">{created.rawKey}</code>
-                            <Button variant="ghost" size="icon-sm" onClick={handleCopy} aria-label="Copy key" className="shrink-0">
-                                <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={16} />
+                                                       <Button variant="ghost" size="icon-sm" onClick={() => handleCopy("key")} aria-label="Copy key" className="shrink-0">
+                                <HugeiconsIcon icon={copied === "key" ? Tick02Icon : Copy01Icon} size={16} />
                             </Button>
+                        </div>
+                        <div className="min-w-0 space-y-1.5">
+                            <p className="text-sm font-medium">Try it</p>
+                            <div className="relative min-w-0 rounded-md border bg-muted">
+                                <pre className="overflow-x-auto p-3 pr-10 text-xs leading-relaxed">
+                                    <code className="font-mono">{buildCurlExample(created.rawKey)}</code>
+                                </pre>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() => handleCopy("command")}
+                                    aria-label="Copy command"
+                                    className="absolute right-1 top-1"
+                                >
+                                    <HugeiconsIcon icon={copied === "command" ? Tick02Icon : Copy01Icon} size={16} />
+                                </Button>
+                            </div>
                         </div>
                         <DialogFooter>
                             <Button onClick={() => handleOpenChange(false)}>Done</Button>

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 // Verify these three icon names exist in your @hugeicons/core-free-icons
 // version; swap for equivalents if TS reports them missing.
-import { AnalyticsUpIcon, Key01Icon, ChartLineData01Icon } from "@hugeicons/core-free-icons";
+import { AnalyticsUpIcon, Key01Icon, ChartLineData01Icon, BookOpen01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "cn";
 import { useCloseMobileNav } from "@/components/layout/mobile-nav-context";
 
@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/api-keys", label: "Dashboard", icon: AnalyticsUpIcon, exact: true },
   { href: "/api-keys/keys", label: "API keys", icon: Key01Icon, exact: false },
   { href: "/api-keys/usage", label: "Usage", icon: ChartLineData01Icon, exact: false },
+  { href: "/docs", label: "Docs", icon: BookOpen01Icon, exact: false, newTab: true },
 ];
 
 export function ApiKeysSidebarNav() {
@@ -22,12 +23,13 @@ export function ApiKeysSidebarNav() {
   return (
     <nav className="space-y-0.5">
       {LINKS.map((link) => {
-        const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
+        const active = !link.newTab && (link.exact ? pathname === link.href : pathname.startsWith(link.href));
         return (
           <Link
             key={link.href}
             href={link.href}
             onClick={closeMobileNav}
+            {...(link.newTab && { target: "_blank", rel: "noopener noreferrer" })}
             className={cn(
               "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-sidebar-accent",
               active ? "bg-sidebar-accent font-medium" : "text-sidebar-foreground",

@@ -2,6 +2,7 @@ import { serverFetch } from "@/lib/api-client";
 import type { ApiKeySummary } from "@recipeai/shared";
 import { CreateKeyDialog } from "@/components/api-keys/create-key-dialog";
 import { ApiKeyCard } from "@/components/api-keys/api-key-card";
+import { ApiQuickstart } from "@/components/api-keys/api-quickstart";
 import { APP_NAME } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ export default async function ApiKeysPage() {
           ))}
         </div>
       )}
+
+      <ApiQuickstart />
     </div>
   );
 }
